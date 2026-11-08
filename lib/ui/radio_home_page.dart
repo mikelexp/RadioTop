@@ -83,6 +83,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   String _section = 'Explore';
   String? _error;
   bool _loading = true;
+  bool _settingsLoaded = false;
   bool _showCountryBrowser = false;
   String? _browseTaxonomy;
   bool _countriesLoading = false;
@@ -303,10 +304,17 @@ class _RadioHomePageState extends State<RadioHomePage> {
         _retryIntervalSeconds = settings.retryIntervalSeconds;
         _bufferSeconds = settings.bufferSeconds;
         widget.favorites.replace(settings.favorites);
+        _settingsLoaded = true;
       });
-      await _radioPlayer.setBufferSeconds(settings.bufferSeconds);
+      unawaited(
+        _radioPlayer
+            .setBufferSeconds(settings.bufferSeconds)
+            .catchError((Object _) {}),
+      );
     } catch (_) {
       // Local settings are optional; browsing remains available with defaults.
+      if (!mounted) return;
+      setState(() => _settingsLoaded = true);
     }
     if (mounted) _loadStations();
   }
@@ -333,6 +341,13 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Future<void> _loadStations() async {
     if (_section == 'Favorites') {
+      if (!_settingsLoaded) {
+        setState(() {
+          _loading = true;
+          _error = null;
+        });
+        return;
+      }
       setState(() {
         _stations = widget.favorites.stations;
         _loading = false;
@@ -629,7 +644,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   ),
                   const SizedBox(width: 10),
                   const Text(
-                    'radiotop',
+                    'RadioTop',
                     style: TextStyle(
                       fontSize: 19,
                       fontWeight: FontWeight.w800,
@@ -639,27 +654,12 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 ],
               ),
               const SizedBox(height: 30),
-              const _SmallLabel('LIBRARY'),
-              const SizedBox(height: 12),
               _navItem(Icons.explore_outlined, 'Explore'),
+              _navItem(Icons.language, 'Countries'),
+              _navItem(Icons.music_note, 'Genres'),
+              _navItem(Icons.translate, 'Languages'),
               _navItem(Icons.favorite_border, 'Favorites'),
               _navItem(Icons.settings_outlined, 'Settings'),
-              const SizedBox(height: 16),
-              const Divider(color: _line),
-              const SizedBox(height: 14),
-              const Text(
-                'Discover stations',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 5),
-              const Text(
-                'Filter by category',
-                style: TextStyle(fontSize: 11, color: _muted),
-              ),
-              const SizedBox(height: 12),
-              _countryCategoryButton(),
-              _taxonomyCategoryButton('Genres', Icons.music_note),
-              _taxonomyCategoryButton('Languages', Icons.translate),
             ],
           ),
         ),
@@ -668,20 +668,22 @@ class _RadioHomePageState extends State<RadioHomePage> {
   );
 
   Widget _navItem(IconData icon, String label) {
-    final active = _section == label;
+    final active = switch (label) {
+      'Countries' => _showCountryBrowser,
+      'Genres' => _browseTaxonomy == 'Genres',
+      'Languages' => _browseTaxonomy == 'Languages',
+      'Favorites' => _section == 'Favorites',
+      'Settings' => _section == 'Settings',
+      _ =>
+        _section == 'Explore' &&
+            !_showCountryBrowser &&
+            _browseTaxonomy == null,
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 5),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        onTap: () {
-          _middleHistory.clear();
-          if (label == 'Settings') {
-            setState(() => _applyRoute(const _MiddleRoute.settings()));
-          } else {
-            setState(() => _applyRoute(_MiddleRoute.stations(section: label)));
-            _loadStations();
-          }
-        },
+        onTap: () => _selectMainMenuItem(label),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
           decoration: BoxDecoration(
@@ -707,43 +709,30 @@ class _RadioHomePageState extends State<RadioHomePage> {
     );
   }
 
-  Widget _taxonomyCategoryButton(String title, IconData icon) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(9),
-      onTap: () => _openTaxonomyBrowser(title),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 13),
-        child: Row(
-          children: [
-            Icon(icon, size: 17, color: _muted),
-            const SizedBox(width: 12),
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 13))),
-            const Icon(Icons.chevron_right, size: 17, color: _muted),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _countryCategoryButton() => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: InkWell(
-      borderRadius: BorderRadius.circular(9),
-      onTap: _openCountryBrowser,
-      child: const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 4, vertical: 13),
-        child: Row(
-          children: [
-            Icon(Icons.language, size: 17, color: _muted),
-            SizedBox(width: 12),
-            Expanded(child: Text('Countries', style: TextStyle(fontSize: 13))),
-            Icon(Icons.chevron_right, size: 17, color: _muted),
-          ],
-        ),
-      ),
-    ),
-  );
+  void _selectMainMenuItem(String label) {
+    _middleHistory.clear();
+    switch (label) {
+      case 'Countries':
+        _openCountryBrowser();
+        break;
+      case 'Genres':
+      case 'Languages':
+        _openTaxonomyBrowser(label);
+        break;
+      case 'Favorites':
+        setState(
+          () => _applyRoute(const _MiddleRoute.stations(section: 'Favorites')),
+        );
+        _loadStations();
+        break;
+      case 'Settings':
+        setState(() => _applyRoute(const _MiddleRoute.settings()));
+        break;
+      default:
+        setState(() => _applyRoute(const _MiddleRoute.stations()));
+        _loadStations();
+    }
+  }
 
   Widget _middlePane() {
     if (_section == 'Settings') return _settingsPane();
@@ -922,7 +911,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
       children: [
         const Icon(Icons.graphic_eq, color: _lime),
         const SizedBox(width: 8),
-        const Text('radiotop', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('RadioTop', style: TextStyle(fontWeight: FontWeight.bold)),
         const Spacer(),
         IconButton(
           tooltip: 'Settings',
