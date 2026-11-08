@@ -24,7 +24,13 @@ static void my_application_activate(GApplication* application) {
   // Leave title bar and window controls to the desktop environment/window manager.
   gtk_window_set_title(window, "RadioTop");
 
-  gtk_window_set_default_size(window, 1280, 720);
+  gtk_window_set_default_size(window, 1280, 800);
+
+  GdkGeometry minimum_size = {};
+  minimum_size.min_width = 1100;
+  minimum_size.min_height = 760;
+  gtk_window_set_geometry_hints(window, nullptr, &minimum_size,
+                                GDK_HINT_MIN_SIZE);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

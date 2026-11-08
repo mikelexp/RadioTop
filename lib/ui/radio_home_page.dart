@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 
 import '../data/radio_browser_client.dart';
+import '../data/radio_player.dart';
 import '../data/radio_top_store.dart';
 import '../models/radio_country.dart';
 import '../models/station.dart';
@@ -13,7 +15,7 @@ const _lime = Color(0xFFB7F36B);
 const _muted = Color(0xFF858B86);
 const _line = Color(0xFF292E2B);
 
-enum _MiddleRouteKind { stations, countries, taxonomy }
+enum _MiddleRouteKind { stations, countries, taxonomy, settings }
 
 class _MiddleRoute {
   const _MiddleRoute.stations({
@@ -33,6 +35,13 @@ class _MiddleRoute {
   const _MiddleRoute.taxonomy(this.category)
     : kind = _MiddleRouteKind.taxonomy,
       section = 'Explore',
+      filterType = null,
+      filterValue = null;
+
+  const _MiddleRoute.settings()
+    : kind = _MiddleRouteKind.settings,
+      category = null,
+      section = 'Settings',
       filterType = null,
       filterValue = null;
 
@@ -60,6 +69,7 @@ class RadioHomePage extends StatefulWidget {
 }
 
 class _RadioHomePageState extends State<RadioHomePage> {
+  final _radioPlayer = RadioPlayerService();
   final _searchController = TextEditingController();
   final _countrySearchController = TextEditingController();
   final _taxonomySearchController = TextEditingController();
@@ -80,12 +90,207 @@ class _RadioHomePageState extends State<RadioHomePage> {
   bool _taxonomyLoading = false;
   String? _taxonomyError;
   int _limit = 100;
+  bool _retryEnabled = true;
+  int _retryIntervalSeconds = 5;
+  int _bufferSeconds = 5;
+  bool _isPlaying = false;
+  bool _playbackLoading = false;
+  String? _playbackError;
+  String? _currentTrack;
+  bool _isBuffering = false;
+  AudioParams? _audioParams;
+  AudioTrack? _audioTrack;
+  double? _audioBitrate;
+  int _stationSelectionRequest = 0;
+  bool _playbackRequested = false;
+  Timer? _retryTimer;
+  Timer? _connectionTimer;
+  StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<String>? _playbackErrorSubscription;
+  StreamSubscription<bool>? _bufferingSubscription;
+  StreamSubscription<String?>? _currentTrackSubscription;
+  StreamSubscription<AudioParams>? _audioParamsSubscription;
+  StreamSubscription<AudioTrack>? _audioTrackSubscription;
+  StreamSubscription<double?>? _audioBitrateSubscription;
   Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
+    _playingSubscription = _radioPlayer.playing.listen((playing) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = playing;
+          if (playing) {
+            _playbackLoading = false;
+            _playbackError = null;
+            _retryTimer?.cancel();
+            _retryTimer = null;
+            _connectionTimer?.cancel();
+            _connectionTimer = null;
+          }
+        });
+      }
+    });
+    _playbackErrorSubscription = _radioPlayer.errors.listen(
+      _handlePlaybackError,
+    );
+    _bufferingSubscription = _radioPlayer.buffering.listen((buffering) {
+      if (mounted) {
+        final wasBuffering = _isBuffering;
+        setState(() {
+          _isBuffering = buffering;
+          if (buffering) _playbackLoading = false;
+        });
+        if (buffering && _playbackRequested && _connectionTimer == null) {
+          _connectionTimer = Timer(const Duration(seconds: 20), () {
+            if (!mounted ||
+                !_playbackRequested ||
+                !_isBuffering ||
+                _isPlaying) {
+              return;
+            }
+            _connectionTimer = null;
+            _handlePlaybackError('Buffering timed out');
+          });
+        } else if (!buffering) {
+          if (wasBuffering) {
+            _connectionTimer?.cancel();
+            _connectionTimer = null;
+            if (_playbackRequested && !_isPlaying) {
+              _connectionTimer = Timer(const Duration(seconds: 20), () {
+                if (!mounted ||
+                    !_playbackRequested ||
+                    _isPlaying ||
+                    _isBuffering) {
+                  return;
+                }
+                _connectionTimer = null;
+                _handlePlaybackError('Playback stalled');
+              });
+            }
+          }
+        }
+      }
+    });
+    _currentTrackSubscription = _radioPlayer.currentTrack.listen((track) {
+      if (mounted) setState(() => _currentTrack = track);
+    });
+    _audioParamsSubscription = _radioPlayer.audioParams.listen((params) {
+      if (mounted) setState(() => _audioParams = params);
+    });
+    _audioTrackSubscription = _radioPlayer.audioTrack.listen((track) {
+      if (mounted) setState(() => _audioTrack = track);
+    });
+    _audioBitrateSubscription = _radioPlayer.audioBitrate.listen((bitrate) {
+      if (mounted) setState(() => _audioBitrate = bitrate);
+    });
     _initialize();
+  }
+
+  Future<void> _selectStation(Station station) async {
+    final request = ++_stationSelectionRequest;
+    _playbackRequested = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _connectionTimer?.cancel();
+    setState(() {
+      _selected = station;
+      _isPlaying = false;
+      _playbackError = null;
+      _playbackLoading = true;
+      _audioParams = null;
+      _audioTrack = null;
+      _audioBitrate = null;
+      _currentTrack = null;
+      _isBuffering = false;
+    });
+    _connectionTimer = Timer(Duration(seconds: _bufferSeconds + 15), () {
+      if (!mounted ||
+          request != _stationSelectionRequest ||
+          !_playbackRequested ||
+          _isPlaying) {
+        return;
+      }
+      _connectionTimer = null;
+      _handlePlaybackError('Connection timed out');
+    });
+    try {
+      await _radioPlayer.play(station);
+      if (mounted && request == _stationSelectionRequest) {
+        setState(() => _playbackLoading = false);
+      }
+    } catch (error) {
+      if (!mounted || request != _stationSelectionRequest) return;
+      _handlePlaybackError(error.toString());
+    }
+  }
+
+  void _handlePlaybackError(String _) {
+    if (!mounted) return;
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+    final station = _selected;
+    final wasRequested = _playbackRequested;
+    final shouldRetry = wasRequested && station != null && _retryEnabled;
+    if (wasRequested && !_retryEnabled) _playbackRequested = false;
+    setState(() {
+      _playbackLoading = false;
+      _isPlaying = false;
+      _playbackError = shouldRetry
+          ? 'Stream interrupted. Retrying in $_retryIntervalSeconds seconds…'
+          : wasRequested && !_retryEnabled
+          ? 'Stream interrupted. Automatic retry is off.'
+          : 'Could not start this station. Try again.';
+    });
+    if (!shouldRetry || _retryTimer != null) return;
+    final request = _stationSelectionRequest;
+    _retryTimer = Timer(Duration(seconds: _retryIntervalSeconds), () {
+      _retryTimer = null;
+      if (!mounted ||
+          !_playbackRequested ||
+          request != _stationSelectionRequest) {
+        return;
+      }
+      _selectStation(station);
+    });
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_selected == null) return;
+    if (_playbackRequested) {
+      _playbackRequested = false;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _connectionTimer?.cancel();
+      _connectionTimer = null;
+      await _radioPlayer.pause();
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _isBuffering = false;
+          _playbackLoading = false;
+        });
+      }
+    } else {
+      await _selectStation(_selected!);
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    _playbackRequested = false;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+    await _radioPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _isPlaying = false;
+        _isBuffering = false;
+        _playbackLoading = false;
+      });
+    }
   }
 
   Future<void> _initialize() async {
@@ -94,8 +299,12 @@ class _RadioHomePageState extends State<RadioHomePage> {
       if (!mounted) return;
       setState(() {
         _limit = settings.resultLimit;
+        _retryEnabled = settings.retryEnabled;
+        _retryIntervalSeconds = settings.retryIntervalSeconds;
+        _bufferSeconds = settings.bufferSeconds;
         widget.favorites.replace(settings.favorites);
       });
+      await _radioPlayer.setBufferSeconds(settings.bufferSeconds);
     } catch (_) {
       // Local settings are optional; browsing remains available with defaults.
     }
@@ -108,6 +317,16 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _searchController.dispose();
     _countrySearchController.dispose();
     _taxonomySearchController.dispose();
+    _playingSubscription?.cancel();
+    _playbackErrorSubscription?.cancel();
+    _bufferingSubscription?.cancel();
+    _currentTrackSubscription?.cancel();
+    _audioParamsSubscription?.cancel();
+    _audioTrackSubscription?.cancel();
+    _audioBitrateSubscription?.cancel();
+    _radioPlayer.dispose();
+    _retryTimer?.cancel();
+    _connectionTimer?.cancel();
     widget.client.close();
     super.dispose();
   }
@@ -185,6 +404,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   }
 
   _MiddleRoute _currentMiddleRoute() {
+    if (_section == 'Settings') return const _MiddleRoute.settings();
     if (_showCountryBrowser) return const _MiddleRoute.countries();
     if (_browseTaxonomy case final category?) {
       return _MiddleRoute.taxonomy(category);
@@ -279,11 +499,79 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Future<void> _setResultLimit(int value) async {
     setState(() => _limit = value);
     try {
-      await widget.store.saveSettings(resultLimit: value);
+      await _saveSettings();
     } on FileSystemException {
       // The current session still uses the selected result count.
     }
     _loadStations();
+  }
+
+  Future<void> _saveSettings() => widget.store.saveSettings(
+    resultLimit: _limit,
+    retryEnabled: _retryEnabled,
+    retryIntervalSeconds: _retryIntervalSeconds,
+    bufferSeconds: _bufferSeconds,
+  );
+
+  Future<void> _setRetryEnabled(bool enabled) async {
+    setState(() {
+      _retryEnabled = enabled;
+      if (!enabled && _retryTimer != null) {
+        _playbackRequested = false;
+        _retryTimer?.cancel();
+        _retryTimer = null;
+        if (_playbackError?.startsWith('Stream interrupted') == true) {
+          _playbackError = 'Stream interrupted. Automatic retry is off.';
+        }
+      }
+    });
+    try {
+      await _saveSettings();
+    } on FileSystemException {
+      // Keep the preference in memory for this session.
+    }
+  }
+
+  Future<void> _setRetryInterval(int seconds) async {
+    setState(() => _retryIntervalSeconds = seconds);
+    if (_retryTimer != null && _selected != null && _playbackRequested) {
+      _retryTimer!.cancel();
+      final request = _stationSelectionRequest;
+      _retryTimer = Timer(Duration(seconds: seconds), () {
+        _retryTimer = null;
+        final station = _selected;
+        if (mounted &&
+            station != null &&
+            _playbackRequested &&
+            _retryEnabled &&
+            request == _stationSelectionRequest) {
+          _selectStation(station);
+        }
+      });
+      setState(
+        () => _playbackError =
+            'Stream interrupted. Retrying in $seconds seconds…',
+      );
+    }
+    try {
+      await _saveSettings();
+    } on FileSystemException {
+      // Keep the preference in memory for this session.
+    }
+  }
+
+  Future<void> _setBufferSeconds(int seconds) async {
+    setState(() => _bufferSeconds = seconds);
+    try {
+      await _radioPlayer.setBufferSeconds(seconds);
+    } catch (_) {
+      // The setting will be applied the next time a stream opens.
+    }
+    try {
+      await _saveSettings();
+    } on FileSystemException {
+      // Keep the preference in memory for this session.
+    }
   }
 
   @override
@@ -355,6 +643,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
               const SizedBox(height: 12),
               _navItem(Icons.explore_outlined, 'Explore'),
               _navItem(Icons.favorite_border, 'Favorites'),
+              _navItem(Icons.settings_outlined, 'Settings'),
               const SizedBox(height: 16),
               const Divider(color: _line),
               const SizedBox(height: 14),
@@ -374,25 +663,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
             ],
           ),
         ),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C211E),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.public, size: 17, color: _lime),
-              SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  'Stations from around the world',
-                  style: TextStyle(fontSize: 11, color: _muted),
-                ),
-              ),
-            ],
-          ),
-        ),
       ],
     ),
   );
@@ -405,8 +675,12 @@ class _RadioHomePageState extends State<RadioHomePage> {
         borderRadius: BorderRadius.circular(10),
         onTap: () {
           _middleHistory.clear();
-          setState(() => _applyRoute(_MiddleRoute.stations(section: label)));
-          _loadStations();
+          if (label == 'Settings') {
+            setState(() => _applyRoute(const _MiddleRoute.settings()));
+          } else {
+            setState(() => _applyRoute(_MiddleRoute.stations(section: label)));
+            _loadStations();
+          }
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
@@ -472,11 +746,175 @@ class _RadioHomePageState extends State<RadioHomePage> {
   );
 
   Widget _middlePane() {
+    if (_section == 'Settings') return _settingsPane();
     if (_showCountryBrowser) return _countryBrowser();
     final category = _browseTaxonomy;
     if (category != null) return _taxonomyBrowser(category);
     return _results();
   }
+
+  Widget _settingsPane() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(28, 27, 28, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Settings',
+              style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -.7,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Playback and connection preferences',
+              style: TextStyle(color: _muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      const Divider(height: 1, color: _line),
+      Expanded(
+        child: ListView(
+          padding: const EdgeInsets.all(28),
+          children: [
+            const _SmallLabel('STREAM RECOVERY'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF191D1A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _line),
+              ),
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _retryEnabled,
+                onChanged: _setRetryEnabled,
+                activeThumbColor: _lime,
+                title: const Text(
+                  'Retry interrupted streams',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text(
+                  'Keep the station in play mode and reconnect automatically.',
+                  style: TextStyle(color: _muted, fontSize: 11),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Opacity(
+              opacity: _retryEnabled ? 1 : .45,
+              child: IgnorePointer(
+                ignoring: !_retryEnabled,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 13,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF191D1A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _line),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Retry interval',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Time between connection attempts',
+                              style: TextStyle(color: _muted, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      DropdownButton<int>(
+                        value: _retryIntervalSeconds,
+                        underline: const SizedBox.shrink(),
+                        items: const [1, 3, 5, 10, 15, 30]
+                            .map(
+                              (seconds) => DropdownMenuItem(
+                                value: seconds,
+                                child: Text('$seconds s'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) _setRetryInterval(value);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 30),
+            const _SmallLabel('AUDIO BUFFER'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF191D1A),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _line),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Buffer duration',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '$_bufferSeconds seconds',
+                        style: const TextStyle(color: _lime, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: _bufferSeconds.toDouble(),
+                    min: 1,
+                    max: 30,
+                    divisions: 29,
+                    label: '$_bufferSeconds s',
+                    activeColor: _lime,
+                    onChanged: (value) =>
+                        setState(() => _bufferSeconds = value.round()),
+                    onChangeEnd: (value) => _setBufferSeconds(value.round()),
+                  ),
+                  const Text(
+                    'More buffering can help unstable connections, but adds delay before playback and after dropouts.',
+                    style: TextStyle(color: _muted, fontSize: 11, height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 
   Widget _topBar() => Padding(
     padding: const EdgeInsets.fromLTRB(18, 10, 18, 7),
@@ -486,6 +924,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
         const SizedBox(width: 8),
         const Text('radiotop', style: TextStyle(fontWeight: FontWeight.bold)),
         const Spacer(),
+        IconButton(
+          tooltip: 'Settings',
+          onPressed: () {
+            _middleHistory.clear();
+            setState(() => _applyRoute(const _MiddleRoute.settings()));
+          },
+          icon: const Icon(Icons.settings_outlined, color: _lime),
+        ),
         IconButton(
           onPressed: () {
             final section = _section == 'Favorites' ? 'Explore' : 'Favorites';
@@ -974,7 +1420,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     final active = _selected?.uuid == station.uuid;
     final favorite = widget.favorites.contains(station);
     return InkWell(
-      onTap: () => setState(() => _selected = station),
+      onTap: () => _selectStation(station),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 11),
         color: active ? const Color(0xFF1C241B) : Colors.transparent,
@@ -1080,9 +1526,13 @@ class _RadioHomePageState extends State<RadioHomePage> {
             Container(
               width: 7,
               height: 7,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Color(0xFF404642),
+                color: (_isBuffering || (_playbackRequested && !_isPlaying))
+                    ? const Color(0xFFFFC66D)
+                    : _isPlaying
+                    ? _lime
+                    : const Color(0xFF404642),
               ),
             ),
           ],
@@ -1108,19 +1558,70 @@ class _RadioHomePageState extends State<RadioHomePage> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 12, color: _muted),
         ),
-        const SizedBox(height: 26),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: null,
-            icon: const Icon(Icons.play_arrow_rounded),
-            label: const Text('Playback coming soon'),
-            style: FilledButton.styleFrom(
-              disabledBackgroundColor: const Color(0xFF283020),
-              disabledForegroundColor: _lime,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+        if (_currentTrack != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _currentTrack!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13,
+              color: _lime,
+              fontWeight: FontWeight.w600,
             ),
           ),
+        ],
+        if (_playbackError != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _playbackError!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 11),
+          ),
+        ],
+        const SizedBox(height: 26),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _selected == null ? null : _togglePlayback,
+                icon: _playbackLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        _playbackRequested
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                label: Text(
+                  _playbackLoading
+                      ? 'Connecting…'
+                      : _isBuffering
+                      ? 'Buffering…'
+                      : _playbackRequested && !_isPlaying
+                      ? 'Reconnecting…'
+                      : _isPlaying
+                      ? 'Pause playback'
+                      : 'Play station',
+                ),
+                style: FilledButton.styleFrom(
+                  disabledBackgroundColor: const Color(0xFF283020),
+                  disabledForegroundColor: _lime,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              tooltip: 'Stop playback',
+              onPressed: _selected == null ? null : _stopPlayback,
+              icon: const Icon(Icons.stop_rounded),
+            ),
+          ],
         ),
         const SizedBox(height: 26),
         const Divider(color: _line),
@@ -1129,23 +1630,33 @@ class _RadioHomePageState extends State<RadioHomePage> {
         const SizedBox(height: 14),
         _detail('Country', _selected?.country),
         _detail('Language', _selected?.language),
-        _detail('Codec', _selected?.codec),
+        _detail('Codec', _audioTrack?.codec ?? _selected?.codec),
         _detail(
           'Bitrate',
-          (_selected?.bitrate ?? 0) > 0 ? '${_selected!.bitrate} kbps' : null,
+          _audioBitrate != null && _audioBitrate! > 0
+              ? '${(_audioBitrate! / 1000).round()} kbps · decoder'
+              : (_selected?.bitrate ?? 0) > 0
+              ? '${_selected!.bitrate} kbps · catalog'
+              : null,
         ),
         _detail('Container', null),
-        _detail('Sample rate', null),
-        _detail('Channels', null),
-        _detail('Current track', null),
-        const Spacer(),
-        const Center(
-          child: Text(
-            'Technical details appear when reported by the source.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 10, color: _muted),
-          ),
+        _detail('Decoder format', _audioParams?.format),
+        _detail(
+          'Sample rate',
+          (_audioParams?.sampleRate ?? 0) > 0
+              ? '${((_audioParams!.sampleRate!) / 1000).toStringAsFixed(_audioParams!.sampleRate! % 1000 == 0 ? 0 : 1)} kHz · decoder'
+              : null,
         ),
+        _detail(
+          'Channels',
+          _audioParams?.hrChannels ??
+              _audioParams?.channels ??
+              ((_audioParams?.channelCount ?? 0) > 0
+                  ? '${_audioParams!.channelCount} channels'
+                  : null),
+        ),
+        _detail('Current track', _currentTrack),
+        const Spacer(),
       ],
     ),
   );
@@ -1169,7 +1680,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
             style: const TextStyle(fontSize: 12),
           ),
         ),
-        const Icon(Icons.play_circle_outline, color: _muted),
+        IconButton(
+          tooltip: _isPlaying ? 'Pause' : 'Play',
+          onPressed: _selected == null ? null : _togglePlayback,
+          icon: Icon(
+            _playbackRequested ? Icons.pause_circle : Icons.play_circle_outline,
+            color: _playbackRequested ? _lime : _muted,
+          ),
+        ),
       ],
     ),
   );

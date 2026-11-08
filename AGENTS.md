@@ -7,15 +7,19 @@
 
 ## Product goal
 
-RadioTop is a Linux desktop internet-radio browser and player built with Dart and Flutter. Its station catalog comes from Radio-Browser (`radio-browser.info`). The interface is information-rich and organized into three main columns: primary navigation, category/search and station results, and the player.
+RadioTop is a Linux desktop internet-radio browser and player built with Dart and Flutter. Its station catalog comes from Radio-Browser (`radio-browser.info`). The English-language interface has three columns: navigation and category selectors, a central category picker or station results, and the player.
 
 Core requirements:
 
-- Browse and search stations using every taxonomy exposed by Radio-Browser, loading taxonomy values from the API rather than maintaining fixed lists.
+- Browse and search by country, genre/tag, and language. Load all available values dynamically from Radio-Browser rather than maintaining fixed taxonomy lists. Do not offer codec as a search filter; codec remains available as station metadata.
+- Show the full country list returned by Radio-Browser in the central column, make it searchable, show station counts and country flags, then load that country's stations when selected. Country flags may use a separate ISO metadata source because Radio-Browser's country list does not provide flag codes.
+- Show searchable genre and language lists in the central column, then load matching stations when selected.
 - Let the user choose the result count; default to 100.
 - Show station favicons and available station metadata in results.
 - Persist configuration and favorites under `~/.config/radiotop/` (for example, `config.json` and `favorites.json`).
 - Support common internet-radio stream formats through a suitable Linux audio backend.
+- Keep interrupted streams in play mode and retry automatically at a configurable interval; allow automatic retries to be disabled.
+- Make the playback buffer duration configurable and persist playback preferences with the other settings.
 - Display all available station and playback information, including current track/artwork when provided and technical stream details such as container, codec, bitrate, bit depth, sample rate, and channel layout when the API, stream, or decoder exposes them. Clearly mark unavailable or unreported values; never invent technical metadata.
 
 ## Implementation guidance
@@ -32,7 +36,12 @@ Core requirements:
 
 - Flutter project package name: `radiotop`.
 - Linux desktop scaffolding exists under `linux/`.
-- The default Flutter counter screen is scaffolding and should be replaced as product UI is implemented.
+- The counter scaffolding has been replaced with the RadioTop catalog browser.
+- `run.sh` runs the Linux app through FVM; `compile.sh` creates a Linux release build through FVM.
+- Stream playback uses `media_kit` with its Linux MPV backend. Play, pause, stop, live ICY title, buffering state, and decoder details are connected to the UI.
+- Settings persist the auto-retry toggle, retry interval, audio buffer duration, and result limit under `~/.config/radiotop/config.json`.
+- Radio-Browser requests discover API mirrors and fail over after transient failures.
+- The Linux window opens at 1280 × 800 with a minimum size of 1100 × 760.
 
 ## Working practices
 

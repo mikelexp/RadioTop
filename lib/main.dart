@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'data/radio_browser_client.dart';
 import 'data/radio_top_store.dart';
@@ -6,6 +7,7 @@ import 'models/station.dart';
 import 'ui/radio_home_page.dart';
 
 void main() {
+  MediaKit.ensureInitialized();
   runApp(const RadioTopApp());
 }
 
