@@ -15,6 +15,16 @@ const _lime = Color(0xFFB7F36B);
 const _muted = Color(0xFF858B86);
 const _line = Color(0xFF292E2B);
 
+Color _accent(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.light
+    ? const Color(0xFF42651B)
+    : _lime;
+
+Color _dividerColor(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.light
+    ? const Color(0x1F000000)
+    : _line;
+
 enum _MiddleRouteKind { stations, countries, taxonomy, settings }
 
 class _MiddleRoute {
@@ -58,11 +68,13 @@ class RadioHomePage extends StatefulWidget {
     required this.client,
     required this.favorites,
     required this.store,
+    required this.onThemeModeChanged,
   });
 
   final RadioBrowserClient client;
   final StationFavorites favorites;
   final RadioTopStore store;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
   @override
   State<RadioHomePage> createState() => _RadioHomePageState();
@@ -94,6 +106,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   bool _retryEnabled = true;
   int _retryIntervalSeconds = 5;
   int _bufferSeconds = 5;
+  String _themeMode = 'system';
   bool _isPlaying = false;
   bool _playbackLoading = false;
   String? _playbackError;
@@ -338,6 +351,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
         _retryEnabled = settings.retryEnabled;
         _retryIntervalSeconds = settings.retryIntervalSeconds;
         _bufferSeconds = settings.bufferSeconds;
+        _themeMode = settings.themeMode;
+        widget.onThemeModeChanged(_parseThemeMode(settings.themeMode));
         widget.favorites.replace(settings.favorites);
         _settingsLoaded = true;
       });
@@ -562,7 +577,25 @@ class _RadioHomePageState extends State<RadioHomePage> {
     retryEnabled: _retryEnabled,
     retryIntervalSeconds: _retryIntervalSeconds,
     bufferSeconds: _bufferSeconds,
+    themeMode: _themeMode,
   );
+
+  ThemeMode _parseThemeMode(String mode) => switch (mode) {
+    'light' => ThemeMode.light,
+    'dark' => ThemeMode.dark,
+    _ => ThemeMode.system,
+  };
+
+  Future<void> _setThemeMode(String? mode) async {
+    if (mode == null) return;
+    setState(() => _themeMode = mode);
+    widget.onThemeModeChanged(_parseThemeMode(mode));
+    try {
+      await _saveSettings();
+    } on FileSystemException {
+      // Keep the selected theme for this session.
+    }
+  }
 
   Future<void> _setRetryEnabled(bool enabled) async {
     setState(() {
@@ -635,9 +668,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
             return Row(
               children: [
                 SizedBox(width: 250, child: _navigation()),
-                const VerticalDivider(width: 1, color: _line),
+                VerticalDivider(width: 1, color: _dividerColor(context)),
                 Expanded(child: _middlePane()),
-                const VerticalDivider(width: 1, color: _line),
+                VerticalDivider(width: 1, color: _dividerColor(context)),
                 SizedBox(width: 315, child: _player()),
               ],
             );
@@ -670,12 +703,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     width: 34,
                     height: 34,
                     decoration: BoxDecoration(
-                      color: _lime,
+                      color: _accent(context),
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.graphic_eq,
-                      color: Color(0xFF17200F),
+                      color: Theme.of(context).brightness == Brightness.light
+                          ? Colors.white
+                          : const Color(0xFF17200F),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -723,18 +758,22 @@ class _RadioHomePageState extends State<RadioHomePage> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
           decoration: BoxDecoration(
-            color: active ? const Color(0xFF242A25) : Colors.transparent,
+            color: active
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 18, color: active ? _lime : _muted),
+              Icon(icon, size: 18, color: active ? _accent(context) : _muted),
               const SizedBox(width: 11),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  color: active ? Colors.white : _muted,
+                  color: active
+                      ? Theme.of(context).colorScheme.onSecondaryContainer
+                      : _muted,
                   fontWeight: active ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
@@ -802,25 +841,50 @@ class _RadioHomePageState extends State<RadioHomePage> {
           ],
         ),
       ),
-      const Divider(height: 1, color: _line),
+      Divider(height: 1, color: _dividerColor(context)),
       Expanded(
         child: ListView(
           padding: const EdgeInsets.all(28),
           children: [
+            const _SmallLabel('APPEARANCE'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: DropdownButtonFormField<String>(
+                value: _themeMode,
+                dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+                decoration: const InputDecoration(
+                  labelText: 'Theme',
+                  border: InputBorder.none,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'system', child: Text('System')),
+                  DropdownMenuItem(value: 'light', child: Text('Light')),
+                  DropdownMenuItem(value: 'dark', child: Text('Dark')),
+                ],
+                onChanged: _setThemeMode,
+              ),
+            ),
+            const SizedBox(height: 30),
             const _SmallLabel('STREAM RECOVERY'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0xFF191D1A),
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _line),
+                border: Border.all(color: Theme.of(context).dividerColor),
               ),
               child: SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _retryEnabled,
                 onChanged: _setRetryEnabled,
-                activeThumbColor: _lime,
+                activeThumbColor: _accent(context),
                 title: const Text(
                   'Retry interrupted streams',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
@@ -842,9 +906,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     vertical: 13,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF191D1A),
+                    color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _line),
+                    border: Border.all(color: Theme.of(context).dividerColor),
                   ),
                   child: Row(
                     children: [
@@ -869,6 +933,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                       ),
                       DropdownButton<int>(
                         value: _retryIntervalSeconds,
+                        dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                         underline: const SizedBox.shrink(),
                         items: const [1, 3, 5, 10, 15, 30]
                             .map(
@@ -893,9 +958,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
             Container(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF191D1A),
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _line),
+                border: Border.all(color: Theme.of(context).dividerColor),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -913,7 +978,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                       ),
                       Text(
                         '$_bufferSeconds seconds',
-                        style: const TextStyle(color: _lime, fontSize: 12),
+                        style: TextStyle(color: _accent(context), fontSize: 12),
                       ),
                     ],
                   ),
@@ -923,7 +988,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     max: 30,
                     divisions: 29,
                     label: '$_bufferSeconds s',
-                    activeColor: _lime,
+                    activeColor: _accent(context),
                     onChanged: (value) =>
                         setState(() => _bufferSeconds = value.round()),
                     onChangeEnd: (value) => _setBufferSeconds(value.round()),
@@ -945,7 +1010,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     padding: const EdgeInsets.fromLTRB(18, 10, 18, 7),
     child: Row(
       children: [
-        const Icon(Icons.graphic_eq, color: _lime),
+        Icon(Icons.graphic_eq, color: _accent(context)),
         const SizedBox(width: 8),
         const Text('RadioTop', style: TextStyle(fontWeight: FontWeight.bold)),
         const Spacer(),
@@ -955,7 +1020,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             _middleHistory.clear();
             setState(() => _applyRoute(const _MiddleRoute.settings()));
           },
-          icon: const Icon(Icons.settings_outlined, color: _lime),
+          icon: Icon(Icons.settings_outlined, color: _accent(context)),
         ),
         IconButton(
           onPressed: () {
@@ -968,7 +1033,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
           },
           icon: Icon(
             _section == 'Favorites' ? Icons.favorite : Icons.favorite_border,
-            color: _lime,
+            color: _accent(context),
           ),
         ),
       ],
@@ -1023,7 +1088,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   hintStyle: const TextStyle(color: _muted, fontSize: 13),
                   prefixIcon: const Icon(Icons.search, size: 19, color: _muted),
                   filled: true,
-                  fillColor: const Color(0xFF191D1A),
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   border: OutlineInputBorder(
                     borderSide: BorderSide.none,
@@ -1034,7 +1099,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             ],
           ),
         ),
-        const Divider(height: 1, color: _line),
+        Divider(height: 1, color: _dividerColor(context)),
         Expanded(child: _countryList(countries)),
       ],
     );
@@ -1089,7 +1154,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   hintStyle: const TextStyle(color: _muted, fontSize: 13),
                   prefixIcon: const Icon(Icons.search, size: 19, color: _muted),
                   filled: true,
-                  fillColor: const Color(0xFF191D1A),
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                   contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   border: OutlineInputBorder(
                     borderSide: BorderSide.none,
@@ -1100,7 +1165,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             ],
           ),
         ),
-        const Divider(height: 1, color: _line),
+        Divider(height: 1, color: _dividerColor(context)),
         Expanded(child: _taxonomyList(category, options)),
       ],
     );
@@ -1108,8 +1173,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _taxonomyList(String category, List<RadioTaxonomyOption> options) {
     if (_taxonomyLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _lime, strokeWidth: 2),
+      return Center(
+        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
       );
     }
     if (_taxonomyError != null) {
@@ -1129,7 +1194,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
       );
     }
     if (options.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No results match your search.',
           style: TextStyle(color: _muted),
@@ -1139,7 +1204,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: options.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, color: _line),
+      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) {
         final option = options[index];
         return InkWell(
@@ -1175,8 +1240,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _countryList(List<RadioCountry> countries) {
     if (_countriesLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _lime, strokeWidth: 2),
+      return Center(
+        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
       );
     }
     if (_countryError != null) {
@@ -1206,7 +1271,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: countries.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, color: _line),
+      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) {
         final country = countries[index];
         return InkWell(
@@ -1316,7 +1381,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                         color: _muted,
                       ),
                       filled: true,
-                      fillColor: const Color(0xFF191D1A),
+                      fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
                       border: OutlineInputBorder(
                         borderSide: BorderSide.none,
@@ -1371,7 +1436,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
           ],
         ),
       ),
-      const Divider(height: 1, color: _line),
+      Divider(height: 1, color: _dividerColor(context)),
       Expanded(child: _bodyResults()),
     ],
   );
@@ -1379,6 +1444,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _limitPicker() => PopupMenuButton<int>(
     initialValue: _limit,
     onSelected: _setResultLimit,
+    color: Theme.of(context).colorScheme.surfaceContainerHigh,
     itemBuilder: (_) => [
       25,
       50,
@@ -1388,7 +1454,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
-        color: const Color(0xFF191D1A),
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -1403,8 +1469,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _bodyResults() {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: _lime, strokeWidth: 2),
+      return Center(
+        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
       );
     }
     if (_error != null) {
@@ -1436,7 +1502,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 5),
       itemCount: _stations.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, color: _line),
+      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) => _stationRow(_stations[index]),
     );
   }
@@ -1448,7 +1514,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
       onTap: () => _selectStation(station),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 11),
-        color: active ? const Color(0xFF1C241B) : Colors.transparent,
+        color: active
+            ? Theme.of(context).colorScheme.secondaryContainer
+            : Colors.transparent,
         child: Row(
           children: [
             _favicon(station),
@@ -1464,7 +1532,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: active ? _lime : Colors.white,
+                      color: active
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1503,7 +1573,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
               icon: Icon(
                 favorite ? Icons.favorite : Icons.favorite_border,
                 size: 17,
-                color: favorite ? _lime : _muted,
+                color: favorite ? _accent(context) : _muted,
               ),
             ),
           ],
@@ -1517,7 +1587,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     child: Container(
       width: 38,
       height: 38,
-      color: const Color(0xFF252A27),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: station.favicon.isEmpty
           ? const Icon(Icons.radio, color: _muted, size: 18)
           : Image.network(
@@ -1542,8 +1612,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
       onPressed: onPressed,
       padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
-        backgroundColor: active ? _lime : const Color(0xFF252A27),
-        foregroundColor: active ? const Color(0xFF151915) : Colors.white,
+        backgroundColor: active
+            ? _accent(context)
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        foregroundColor: active
+            ? (Theme.of(context).brightness == Brightness.light
+                  ? Colors.white
+                  : const Color(0xFF151915))
+            : Theme.of(context).colorScheme.onSurface,
       ),
       icon: loading
           ? const SizedBox.square(
@@ -1561,7 +1637,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
       children: [
         Row(
           children: [
-            const Icon(Icons.graphic_eq, color: _lime, size: 17),
+            Icon(Icons.graphic_eq, color: _accent(context), size: 17),
             const SizedBox(width: 8),
             const Text(
               'PLAYER',
@@ -1581,7 +1657,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 color: (_isBuffering || (_playbackRequested && !_isPlaying))
                     ? const Color(0xFFFFC66D)
                     : _isPlaying
-                    ? _lime
+                    ? _accent(context)
                     : const Color(0xFF404642),
               ),
             ),
@@ -1614,9 +1690,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
             _currentTrack!,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: _lime,
+              color: _accent(context),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1682,7 +1758,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     : _volume < 50
                     ? Icons.volume_down_rounded
                     : Icons.volume_up_rounded,
-                color: _volume > 0 ? _lime : _muted,
+                color: _volume > 0 ? _accent(context) : _muted,
               ),
             ),
             Expanded(
@@ -1691,7 +1767,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 min: 0,
                 max: 100,
                 divisions: 100,
-                activeColor: _lime,
+                activeColor: _accent(context),
                 onChanged: _changeVolume,
               ),
             ),
@@ -1741,9 +1817,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _miniPlayer() => Container(
     height: 66,
     padding: const EdgeInsets.symmetric(horizontal: 18),
-    decoration: const BoxDecoration(
-      color: Color(0xFF181C19),
-      border: Border(top: BorderSide(color: _line)),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.surface,
+      border: Border(top: BorderSide(color: _dividerColor(context))),
     ),
     child: Row(
       children: [
@@ -1762,7 +1838,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
           onPressed: _selected == null ? null : _togglePlayback,
           icon: Icon(
             _playbackRequested ? Icons.pause_circle : Icons.play_circle_outline,
-            color: _playbackRequested ? _lime : _muted,
+            color: _playbackRequested ? _accent(context) : _muted,
           ),
         ),
       ],
@@ -1794,7 +1870,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _artGlyph(double size) => Center(
     child: Icon(
       Icons.radio_rounded,
-      color: _lime.withValues(alpha: .7),
+      color: _accent(context).withValues(alpha: .7),
       size: size * .38,
     ),
   );

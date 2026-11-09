@@ -11,18 +11,41 @@ void main() {
   runApp(const RadioTopApp());
 }
 
-class RadioTopApp extends StatelessWidget {
+class RadioTopApp extends StatefulWidget {
   const RadioTopApp({super.key});
 
   @override
+  State<RadioTopApp> createState() => _RadioTopAppState();
+}
+
+class _RadioTopAppState extends State<RadioTopApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  void _setThemeMode(ThemeMode mode) => setState(() => _themeMode = mode);
+
+  @override
   Widget build(BuildContext context) {
-    const background = Color(0xFF101211);
     return MaterialApp(
       title: 'RadioTop',
       debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
       theme: ThemeData(
+        brightness: Brightness.light,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFB7F36B),
+          brightness: Brightness.light,
+        ).copyWith(
+          primary: const Color(0xFF42651B),
+          onPrimary: Colors.white,
+          secondary: const Color(0xFF42651B),
+          onSecondary: Colors.white,
+        ),
+        fontFamily: 'Roboto',
+        useMaterial3: true,
+      ),
+      darkTheme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: background,
+        scaffoldBackgroundColor: const Color(0xFF101211),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFB7F36B),
           brightness: Brightness.dark,
@@ -35,6 +58,7 @@ class RadioTopApp extends StatelessWidget {
         client: RadioBrowserClient(),
         store: RadioTopStore(),
         favorites: StationFavorites(),
+        onThemeModeChanged: _setThemeMode,
       ),
     );
   }

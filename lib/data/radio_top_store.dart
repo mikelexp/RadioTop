@@ -10,6 +10,7 @@ class RadioTopSettings {
     this.retryEnabled = true,
     this.retryIntervalSeconds = 5,
     this.bufferSeconds = 5,
+    this.themeMode = 'system',
     this.favorites = const [],
   });
 
@@ -17,6 +18,7 @@ class RadioTopSettings {
   final bool retryEnabled;
   final int retryIntervalSeconds;
   final int bufferSeconds;
+  final String themeMode;
   final List<Station> favorites;
 }
 
@@ -37,6 +39,7 @@ class RadioTopStore {
     var retryEnabled = true;
     var retryIntervalSeconds = 5;
     var bufferSeconds = 5;
+    var themeMode = 'system';
     var favorites = <Station>[];
     try {
       final settings = await _readObject(_settingsFile);
@@ -64,6 +67,11 @@ class RadioTopStore {
           parsedBufferSeconds >= 1 &&
           parsedBufferSeconds <= 30) {
         bufferSeconds = parsedBufferSeconds;
+      }
+      final storedThemeMode = settings?['themeMode'];
+      if (storedThemeMode is String &&
+          const {'system', 'light', 'dark'}.contains(storedThemeMode)) {
+        themeMode = storedThemeMode;
       }
     } on FileSystemException {
       // Missing or inaccessible settings use their safe defaults.
@@ -95,6 +103,7 @@ class RadioTopStore {
       retryEnabled: retryEnabled,
       retryIntervalSeconds: retryIntervalSeconds,
       bufferSeconds: bufferSeconds,
+      themeMode: themeMode,
       favorites: favorites,
     );
   }
@@ -104,6 +113,7 @@ class RadioTopStore {
     required bool retryEnabled,
     required int retryIntervalSeconds,
     required int bufferSeconds,
+    required String themeMode,
   }) => _enqueue(() async {
     await _directory.create(recursive: true);
     await _settingsFile.writeAsString(
@@ -112,6 +122,7 @@ class RadioTopStore {
         'retryEnabled': retryEnabled,
         'retryIntervalSeconds': retryIntervalSeconds,
         'bufferSeconds': bufferSeconds,
+        'themeMode': themeMode,
       }),
       flush: true,
     );
