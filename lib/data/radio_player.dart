@@ -19,6 +19,8 @@ class RadioPlayerService {
 
   Stream<bool> get playing => _player.stream.playing;
   Stream<bool> get buffering => _player.stream.buffering;
+  Stream<double> get volume => _player.stream.volume;
+  double get currentVolume => _player.state.volume;
   Stream<AudioParams> get audioParams => _player.stream.audioParams;
   Stream<double?> get audioBitrate => _player.stream.audioBitrate;
   Stream<AudioTrack> get audioTrack =>
@@ -67,6 +69,9 @@ class RadioPlayerService {
     _operationQueue = operation.catchError((Object _) {});
     return operation;
   }
+
+  Future<void> setVolume(double volume) =>
+      _player.setVolume(volume.clamp(0, 100).toDouble());
 
   Future<void> _observeIcyTitle() async {
     if (_icyTitleObserved) return;

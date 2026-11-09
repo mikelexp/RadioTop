@@ -99,6 +99,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
   String? _playbackError;
   String? _currentTrack;
   bool _isBuffering = false;
+  double _volume = 100;
+  double _lastNonZeroVolume = 100;
   AudioParams? _audioParams;
   AudioTrack? _audioTrack;
   double? _audioBitrate;
@@ -113,6 +115,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   StreamSubscription<AudioParams>? _audioParamsSubscription;
   StreamSubscription<AudioTrack>? _audioTrackSubscription;
   StreamSubscription<double?>? _audioBitrateSubscription;
+  StreamSubscription<double>? _volumeSubscription;
   Timer? _debounce;
 
   @override
@@ -186,6 +189,16 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _audioBitrateSubscription = _radioPlayer.audioBitrate.listen((bitrate) {
       if (mounted) setState(() => _audioBitrate = bitrate);
     });
+    _volume = _radioPlayer.currentVolume;
+    _lastNonZeroVolume = _volume > 0 ? _volume : 100;
+    _volumeSubscription = _radioPlayer.volume.listen((volume) {
+      if (mounted) {
+        setState(() {
+          _volume = volume;
+          if (volume > 0) _lastNonZeroVolume = volume;
+        });
+      }
+    });
     _initialize();
   }
 
@@ -197,7 +210,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _connectionTimer?.cancel();
     setState(() {
       _selected = station;
-      _isPlaying = false;
       _playbackError = null;
       _playbackLoading = true;
       _audioParams = null;
@@ -278,6 +290,17 @@ class _RadioHomePageState extends State<RadioHomePage> {
     }
   }
 
+  void _playAdjacentStation(int offset) {
+    if (_stations.isEmpty || _loading) return;
+    final currentIndex = _stations.indexWhere(
+      (station) => station.uuid == _selected?.uuid,
+    );
+    final nextIndex = currentIndex < 0
+        ? (offset > 0 ? 0 : _stations.length - 1)
+        : (currentIndex + offset + _stations.length) % _stations.length;
+    _selectStation(_stations[nextIndex]);
+  }
+
   Future<void> _stopPlayback() async {
     _playbackRequested = false;
     _retryTimer?.cancel();
@@ -292,6 +315,18 @@ class _RadioHomePageState extends State<RadioHomePage> {
         _playbackLoading = false;
       });
     }
+  }
+
+  void _changeVolume(double volume) {
+    setState(() {
+      _volume = volume;
+      if (volume > 0) _lastNonZeroVolume = volume;
+    });
+    unawaited(_radioPlayer.setVolume(volume).catchError((Object _) {}));
+  }
+
+  void _toggleMute() {
+    _changeVolume(_volume > 0 ? 0 : _lastNonZeroVolume);
   }
 
   Future<void> _initialize() async {
@@ -332,6 +367,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _audioParamsSubscription?.cancel();
     _audioTrackSubscription?.cancel();
     _audioBitrateSubscription?.cancel();
+    _volumeSubscription?.cancel();
     _radioPlayer.dispose();
     _retryTimer?.cancel();
     _connectionTimer?.cancel();
@@ -1493,6 +1529,31 @@ class _RadioHomePageState extends State<RadioHomePage> {
     ),
   );
 
+  Widget _transportButton({
+    required String tooltip,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool active = false,
+    bool loading = false,
+  }) => SizedBox.square(
+    dimension: 48,
+    child: IconButton.filledTonal(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      style: IconButton.styleFrom(
+        backgroundColor: active ? _lime : const Color(0xFF252A27),
+        foregroundColor: active ? const Color(0xFF151915) : Colors.white,
+      ),
+      icon: loading
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(icon),
+    ),
+  );
+
   Widget _player() => Padding(
     padding: const EdgeInsets.fromLTRB(20, 25, 20, 18),
     child: Column(
@@ -1526,7 +1587,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             ),
           ],
         ),
-        const Spacer(),
+        const SizedBox(height: 24),
         Center(child: _artwork(_selected, 184)),
         const SizedBox(height: 23),
         Text(
@@ -1571,52 +1632,80 @@ class _RadioHomePageState extends State<RadioHomePage> {
         ],
         const SizedBox(height: 26),
         Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _selected == null ? null : _togglePlayback,
-                icon: _playbackLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(
-                        _playbackRequested
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                      ),
-                label: Text(
-                  _playbackLoading
-                      ? 'Connecting…'
-                      : _isBuffering
-                      ? 'Buffering…'
-                      : _playbackRequested && !_isPlaying
-                      ? 'Reconnecting…'
-                      : _isPlaying
-                      ? 'Pause playback'
-                      : 'Play station',
-                ),
-                style: FilledButton.styleFrom(
-                  disabledBackgroundColor: const Color(0xFF283020),
-                  disabledForegroundColor: _lime,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
+            _transportButton(
+              tooltip: 'Previous station',
+              icon: Icons.skip_previous_rounded,
+              onPressed: _stations.isEmpty || _loading
+                  ? null
+                  : () => _playAdjacentStation(-1),
             ),
             const SizedBox(width: 8),
-            IconButton.filledTonal(
+            _transportButton(
+              tooltip: _playbackRequested ? 'Pause playback' : 'Play station',
+              icon: _playbackRequested
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded,
+              onPressed: _selected == null ? null : _togglePlayback,
+              active: _isPlaying && !_isBuffering,
+              loading:
+                  _isBuffering || (_playbackRequested && !_isPlaying),
+            ),
+            const SizedBox(width: 8),
+            _transportButton(
               tooltip: 'Stop playback',
+              icon: Icons.stop_rounded,
               onPressed: _selected == null ? null : _stopPlayback,
-              icon: const Icon(Icons.stop_rounded),
+              active: _selected != null && (!_isPlaying || _isBuffering),
+            ),
+            const SizedBox(width: 8),
+            _transportButton(
+              tooltip: 'Next station',
+              icon: Icons.skip_next_rounded,
+              onPressed: _stations.isEmpty || _loading
+                  ? null
+                  : () => _playAdjacentStation(1),
             ),
           ],
         ),
-        const SizedBox(height: 26),
-        const Divider(color: _line),
         const SizedBox(height: 12),
-        const _SmallLabel('STATION DETAILS'),
-        const SizedBox(height: 14),
+        Row(
+          children: [
+            IconButton(
+              tooltip: _volume > 0 ? 'Mute' : 'Unmute',
+              onPressed: _toggleMute,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                _volume == 0
+                    ? Icons.volume_off_rounded
+                    : _volume < 50
+                    ? Icons.volume_down_rounded
+                    : Icons.volume_up_rounded,
+                color: _volume > 0 ? _lime : _muted,
+              ),
+            ),
+            Expanded(
+              child: Slider(
+                value: _volume.clamp(0, 100).toDouble(),
+                min: 0,
+                max: 100,
+                divisions: 100,
+                activeColor: _lime,
+                onChanged: _changeVolume,
+              ),
+            ),
+            SizedBox(
+              width: 34,
+              child: Text(
+                '${_volume.round()}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 10, color: _muted),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
         _detail('Country', _selected?.country),
         _detail('Language', _selected?.language),
         _detail('Codec', _audioTrack?.codec ?? _selected?.codec),
@@ -1628,7 +1717,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ? '${_selected!.bitrate} kbps · catalog'
               : null,
         ),
-        _detail('Container', null),
         _detail('Decoder format', _audioParams?.format),
         _detail(
           'Sample rate',
@@ -1716,18 +1804,28 @@ class _RadioHomePageState extends State<RadioHomePage> {
     child: Row(
       children: [
         Expanded(
+          flex: 2,
           child: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 11, color: _muted),
           ),
         ),
-        Text(
-          value == null || value.isEmpty ? 'Not reported' : value,
-          style: TextStyle(
-            fontSize: 11,
-            color: value == null || value.isEmpty
-                ? const Color(0xFF626A64)
-                : const Color(0xFFDCE1DC),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 3,
+          child: Text(
+            value == null || value.isEmpty ? 'Not reported' : value,
+            textAlign: TextAlign.right,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: value == null || value.isEmpty
+                  ? const Color(0xFF626A64)
+                  : const Color(0xFFDCE1DC),
+            ),
           ),
         ),
       ],
