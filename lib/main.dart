@@ -19,9 +19,21 @@ class RadioTopApp extends StatefulWidget {
 }
 
 class _RadioTopAppState extends State<RadioTopApp> {
+  final _client = RadioBrowserClient();
+  final _store = RadioTopStore();
+  final _favorites = StationFavorites();
   ThemeMode _themeMode = ThemeMode.system;
 
-  void _setThemeMode(ThemeMode mode) => setState(() => _themeMode = mode);
+  void _setThemeMode(ThemeMode mode) {
+    if (_themeMode == mode) return;
+    setState(() => _themeMode = mode);
+  }
+
+  @override
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,9 +67,9 @@ class _RadioTopAppState extends State<RadioTopApp> {
         useMaterial3: true,
       ),
       home: RadioHomePage(
-        client: RadioBrowserClient(),
-        store: RadioTopStore(),
-        favorites: StationFavorites(),
+        client: _client,
+        store: _store,
+        favorites: _favorites,
         onThemeModeChanged: _setThemeMode,
       ),
     );

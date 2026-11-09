@@ -12,6 +12,7 @@ class RadioTopSettings {
     this.bufferSeconds = 5,
     this.themeMode = 'system',
     this.favorites = const [],
+    this.favoritesWarning,
   });
 
   final int resultLimit;
@@ -20,6 +21,7 @@ class RadioTopSettings {
   final int bufferSeconds;
   final String themeMode;
   final List<Station> favorites;
+  final String? favoritesWarning;
 }
 
 class RadioTopStore {
@@ -41,6 +43,7 @@ class RadioTopStore {
     var bufferSeconds = 5;
     var themeMode = 'system';
     var favorites = <Station>[];
+    String? favoritesWarning;
     try {
       final settings = await _readObject(_settingsFile);
       final parsedLimit = int.tryParse(
@@ -80,23 +83,49 @@ class RadioTopStore {
     }
     try {
       final decoded = await _readJson(_favoritesFile);
-      if (decoded is List) {
-        favorites = decoded
-            .whereType<Map<String, dynamic>>()
-            .map((json) {
-              try {
-                return Station.fromJson(json);
-              } on FormatException {
-                return null;
-              }
-            })
-            .whereType<Station>()
-            .toList();
+      if (decoded == null) {
+        favoritesWarning = 'Favorites file not found: ${_favoritesFile.path}';
+      }
+      final entries = switch (decoded) {
+        List list => list,
+        Map map => map['favorites'] is List
+            ? map['favorites'] as List
+            : map['stations'] is List
+            ? map['stations'] as List
+            : map.values.toList(),
+        _ => const <dynamic>[],
+      };
+      var skipped = 0;
+      for (final entry in entries) {
+        if (entry is! Map) {
+          skipped++;
+          continue;
+        }
+        try {
+          final json = Map<String, dynamic>.from(entry);
+          final nested = json['station'];
+          final stationData = nested is Map
+              ? Map<String, dynamic>.from(nested)
+              : json;
+          favorites.add(Station.fromJson(_normalizeFavorite(stationData)));
+        } catch (_) {
+          // One malformed entry must not hide the remaining favorites.
+          skipped++;
+        }
+      }
+      if (skipped > 0) {
+        favoritesWarning =
+            '$skipped favorite entr${skipped == 1 ? 'y was' : 'ies were'} skipped because its station data could not be read.';
+      }
+      if (decoded != null && decoded is! List && decoded is! Map) {
+        favoritesWarning = 'The favorites file must contain a JSON list.';
       }
     } on FileSystemException {
-      // Favorites are optional; start with an empty collection if unavailable.
+      favoritesWarning = 'Could not read ${_favoritesFile.path}.';
     } on FormatException {
-      // Ignore corrupt favorites while preserving the rest of the app.
+      favoritesWarning = 'The favorites file is not valid JSON.';
+    } catch (error) {
+      favoritesWarning = 'Could not load favorites: $error';
     }
     return RadioTopSettings(
       resultLimit: resultLimit,
@@ -105,6 +134,7 @@ class RadioTopStore {
       bufferSeconds: bufferSeconds,
       themeMode: themeMode,
       favorites: favorites,
+      favoritesWarning: favoritesWarning,
     );
   }
 
@@ -154,4 +184,12 @@ class RadioTopStore {
     if (!await file.exists()) return null;
     return jsonDecode(await file.readAsString());
   }
+
+  Map<String, dynamic> _normalizeFavorite(Map<String, dynamic> json) => {
+    ...json,
+    'stationuuid': json['stationuuid'] ?? json['uuid'],
+    'url_resolved':
+        json['url_resolved'] ?? json['streamUrl'] ?? json['stream_url'] ?? json['url'],
+    'countrycode': json['countrycode'] ?? json['countryCode'],
+  };
 }

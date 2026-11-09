@@ -94,6 +94,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   String? _activeValue;
   String _section = 'Explore';
   String? _error;
+  String? _favoritesWarning;
   bool _loading = true;
   bool _settingsLoaded = false;
   bool _showCountryBrowser = false;
@@ -346,15 +347,22 @@ class _RadioHomePageState extends State<RadioHomePage> {
     try {
       final settings = await widget.store.load();
       if (!mounted) return;
+      // Load favorites before notifying the app-level theme state. A theme
+      // rebuild must never prevent the station collection from being restored.
+      widget.favorites.replace(settings.favorites);
       setState(() {
         _limit = settings.resultLimit;
         _retryEnabled = settings.retryEnabled;
         _retryIntervalSeconds = settings.retryIntervalSeconds;
         _bufferSeconds = settings.bufferSeconds;
         _themeMode = settings.themeMode;
-        widget.onThemeModeChanged(_parseThemeMode(settings.themeMode));
-        widget.favorites.replace(settings.favorites);
+        _favoritesWarning = settings.favoritesWarning;
         _settingsLoaded = true;
+        if (_section == 'Favorites') {
+          _stations = widget.favorites.stations;
+          _loading = false;
+          _error = null;
+        }
       });
       unawaited(
         _radioPlayer
@@ -367,6 +375,11 @@ class _RadioHomePageState extends State<RadioHomePage> {
       setState(() => _settingsLoaded = true);
     }
     if (mounted) _loadStations();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onThemeModeChanged(_parseThemeMode(_themeMode));
+      }
+    });
   }
 
   @override
@@ -386,7 +399,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _radioPlayer.dispose();
     _retryTimer?.cancel();
     _connectionTimer?.cancel();
-    widget.client.close();
     super.dispose();
   }
 
@@ -1359,7 +1371,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             const SizedBox(height: 6),
             Text(
               _section == 'Favorites'
-                  ? 'Your saved stations'
+                  ? 'Your saved stations · ${_stations.length}'
                   : _activeTaxonomy != null
                   ? 'Stations · $_activeTaxonomy'
                   : 'Find your next station',
@@ -1492,10 +1504,16 @@ class _RadioHomePageState extends State<RadioHomePage> {
       );
     }
     if (_stations.isEmpty) {
-      return const Center(
-        child: Text(
-          'No stations match your search.',
-          style: TextStyle(color: _muted, fontSize: 12),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            _section == 'Favorites' && _favoritesWarning != null
+                ? _favoritesWarning!
+                : 'No stations match your search.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _muted, fontSize: 12),
+          ),
         ),
       );
     }
