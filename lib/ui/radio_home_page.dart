@@ -482,6 +482,23 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _loadStations();
   }
 
+  String _taxonomyDisplayName(String category, String value) {
+    if (category != 'Genres' && category != 'Languages') return value;
+    return value
+        .split(RegExp(r'\s+'))
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}',
+        )
+        .join(' ');
+  }
+
+  int _compareNames(String a, String b) {
+    final byLowercase = a.toLowerCase().compareTo(b.toLowerCase());
+    return byLowercase != 0 ? byLowercase : a.compareTo(b);
+  }
+
   _MiddleRoute _currentMiddleRoute() {
     if (_section == 'Settings') return const _MiddleRoute.settings();
     if (_showCountryBrowser) return const _MiddleRoute.countries();
@@ -1058,7 +1075,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
     final query = _countrySearchController.text.trim().toLowerCase();
     final countries = _countries
         .where((country) => country.name.toLowerCase().contains(query))
-        .toList();
+        .toList()
+      ..sort((a, b) => _compareNames(a.name, b.name));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1118,7 +1136,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
     final options =
         (_taxonomyOptionsByCategory[category] ?? const <RadioTaxonomyOption>[])
             .where((option) => option.name.toLowerCase().contains(query))
-            .toList();
+            .toList()
+          ..sort((a, b) => _compareNames(a.name, b.name));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1220,7 +1239,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
               children: [
                 Expanded(
                   child: Text(
-                    option.name,
+                    _taxonomyDisplayName(category, option.name),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1350,7 +1369,12 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   child: Text(
                     _section == 'Favorites'
                         ? 'Your favorites'
-                        : _activeValue ?? 'Explore stations',
+                        : _activeValue == null
+                        ? 'Explore stations'
+                        : _taxonomyDisplayName(
+                            _activeTaxonomy ?? '',
+                            _activeValue!,
+                          ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -1367,7 +1391,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
               _section == 'Favorites'
                   ? 'Your saved stations · ${_stations.length}'
                   : _activeTaxonomy != null
-                  ? 'Stations · $_activeTaxonomy'
+                  ? 'Stations · ${_taxonomyDisplayName(_activeTaxonomy!, _activeValue!)}'
                   : 'Find your next station',
               style: const TextStyle(color: _muted, fontSize: 12),
             ),
