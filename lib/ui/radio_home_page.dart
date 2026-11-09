@@ -87,6 +87,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
   final _taxonomySearchController = TextEditingController();
   final Map<String, List<RadioTaxonomyOption>> _taxonomyOptionsByCategory = {};
   final List<_MiddleRoute> _middleHistory = [];
+  int _browseListGeneration = 0;
   List<Station> _stations = [];
   List<RadioCountry> _countries = [];
   Station? _selected;
@@ -798,6 +799,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   void _selectMainMenuItem(String label) {
     _middleHistory.clear();
+    _browseListGeneration++;
     switch (label) {
       case 'Countries':
         _openCountryBrowser();
@@ -1067,12 +1069,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
             children: [
               Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Back to stations',
-                    onPressed: _goBack,
-                    icon: const Icon(Icons.arrow_back, size: 19),
-                  ),
-                  const SizedBox(width: 4),
                   const Text(
                     'Countries',
                     style: TextStyle(
@@ -1084,7 +1080,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.only(left: 52, top: 1, bottom: 16),
+                padding: const EdgeInsets.only(top: 1, bottom: 16),
                 child: Text(
                   _countries.isEmpty
                       ? 'Browse stations by country'
@@ -1133,12 +1129,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
             children: [
               Row(
                 children: [
-                  IconButton(
-                    tooltip: 'Back to stations',
-                    onPressed: _goBack,
-                    icon: const Icon(Icons.arrow_back, size: 19),
-                  ),
-                  const SizedBox(width: 4),
                   Text(
                     category,
                     style: const TextStyle(
@@ -1150,7 +1140,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.only(left: 52, top: 1, bottom: 16),
+                padding: const EdgeInsets.only(top: 1, bottom: 16),
                 child: Text(
                   options.isEmpty
                       ? 'Browse stations by $category'
@@ -1214,6 +1204,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
       );
     }
     return ListView.separated(
+      key: PageStorageKey<String>(
+        'taxonomy-list-$_browseListGeneration-$category',
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: options.length,
       separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
@@ -1281,6 +1274,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
       );
     }
     return ListView.separated(
+      key: PageStorageKey<String>('countries-list-$_browseListGeneration'),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: countries.length,
       separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
