@@ -741,9 +741,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
             if (constraints.maxWidth < 900) return _compactLayout();
             return Row(
               children: [
-                SizedBox(width: 250, child: _navigation()),
-                VerticalDivider(width: 1, color: _dividerColor(context)),
-                Expanded(child: _middlePane()),
+                Expanded(
+                  child: Column(
+                    children: [
+                      _topBar(),
+                      Expanded(child: _middlePane()),
+                    ],
+                  ),
+                ),
                 VerticalDivider(width: 1, color: _dividerColor(context)),
                 SizedBox(width: 315, child: _player()),
               ],
@@ -761,112 +766,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
       _miniPlayer(),
     ],
   );
-
-  Widget _navigation() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 24, 14, 16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: _accent(context),
-                      borderRadius: BorderRadius.circular(11),
-                    ),
-                    child: Icon(
-                      Icons.graphic_eq,
-                      color: Theme.of(context).brightness == Brightness.light
-                          ? Colors.white
-                          : const Color(0xFF17200F),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'RadioTop',
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
-              _navItem(Icons.explore_outlined, 'Radio Stations'),
-              _navItem(Icons.favorite_border, 'Favorites'),
-              _navItem(Icons.settings_outlined, 'Settings'),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-
-  Widget _navItem(IconData icon, String label) {
-    final active = switch (label) {
-      'Favorites' => _section == 'Favorites',
-      'Settings' => _section == 'Settings',
-      _ => _section == 'Explore',
-    };
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => _selectMainMenuItem(label),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-          decoration: BoxDecoration(
-            color: active
-                ? Theme.of(context).colorScheme.secondaryContainer
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: active ? _accent(context) : _muted),
-              const SizedBox(width: 11),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: active
-                      ? Theme.of(context).colorScheme.onSecondaryContainer
-                      : _muted,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _selectMainMenuItem(String label) {
-    _middleHistory.clear();
-    _browseListGeneration++;
-    switch (label) {
-      case 'Favorites':
-        setState(
-          () => _applyRoute(const _MiddleRoute.stations(section: 'Favorites')),
-        );
-        _loadStations();
-        break;
-      case 'Settings':
-        setState(() => _applyRoute(const _MiddleRoute.settings()));
-        break;
-      default:
-        setState(() => _applyRoute(const _MiddleRoute.stations()));
-        _loadStations();
-    }
-  }
 
   Widget _middlePane() {
     if (_section == 'Settings') return _settingsPane();
@@ -1068,14 +967,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(28, 27, 28, 20),
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               'Settings',
               style: TextStyle(
-                fontSize: 25,
+                fontSize: 24,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -.7,
               ),
@@ -1159,18 +1058,21 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Theme.of(context).dividerColor),
               ),
-              child: SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _retryEnabled,
-                onChanged: _setRetryEnabled,
-                activeThumbColor: _accent(context),
-                title: const Text(
-                  'Retry interrupted streams',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                subtitle: const Text(
-                  'Keep the station in play mode and reconnect automatically.',
-                  style: TextStyle(color: _muted, fontSize: 11),
+              child: Material(
+                color: Colors.transparent,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: _retryEnabled,
+                  onChanged: _setRetryEnabled,
+                  activeThumbColor: _accent(context),
+                  title: const Text(
+                    'Retry interrupted streams',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: const Text(
+                    'Keep the station in play mode and reconnect automatically.',
+                    style: TextStyle(color: _muted, fontSize: 11),
+                  ),
                 ),
               ),
             ),
@@ -1288,22 +1190,41 @@ class _RadioHomePageState extends State<RadioHomePage> {
   );
 
   Widget _topBar() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 10, 18, 7),
+    padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
     child: Row(
       children: [
-        Icon(Icons.graphic_eq, color: _accent(context)),
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: _accent(context),
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Icon(
+            Icons.graphic_eq,
+            color: Theme.of(context).brightness == Brightness.light
+                ? Colors.white
+                : const Color(0xFF17200F),
+          ),
+        ),
         const SizedBox(width: 8),
-        const Text('RadioTop', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'RadioTop',
+          style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+        ),
         const Spacer(),
+        const SizedBox(width: 12),
         IconButton(
-          tooltip: 'Settings',
+          tooltip: 'Radio Stations',
           onPressed: () {
             _middleHistory.clear();
-            setState(() => _applyRoute(const _MiddleRoute.settings()));
+            setState(() => _applyRoute(const _MiddleRoute.stations()));
+            _loadStations();
           },
-          icon: Icon(Icons.settings_outlined, color: _accent(context)),
+          icon: Icon(Icons.radio_outlined, color: _accent(context)),
         ),
         IconButton(
+          tooltip: _section == 'Favorites' ? 'Radio Stations' : 'Favorites',
           onPressed: () {
             final section = _section == 'Favorites' ? 'Explore' : 'Favorites';
             _middleHistory.clear();
@@ -1316,6 +1237,14 @@ class _RadioHomePageState extends State<RadioHomePage> {
             _section == 'Favorites' ? Icons.favorite : Icons.favorite_border,
             color: _accent(context),
           ),
+        ),
+        IconButton(
+          tooltip: 'Settings',
+          onPressed: () {
+            _middleHistory.clear();
+            setState(() => _applyRoute(const _MiddleRoute.settings()));
+          },
+          icon: Icon(Icons.settings_outlined, color: _accent(context)),
         ),
       ],
     ),
@@ -1654,37 +1583,39 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 style: const TextStyle(color: _muted, fontSize: 12),
               ),
             ],
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _searchChanged,
-                    decoration: InputDecoration(
-                      hintText: 'Search stations…',
-                      hintStyle: const TextStyle(color: _muted, fontSize: 13),
-                      prefixIcon: const Icon(
-                        Icons.search,
-                        size: 19,
-                        color: _muted,
-                      ),
-                      filled: true,
-                      fillColor: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHigh,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                      border: OutlineInputBorder(
-                        borderSide: BorderSide.none,
-                        borderRadius: BorderRadius.circular(10),
+            if (_section != 'Favorites') ...[
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: _searchChanged,
+                      decoration: InputDecoration(
+                        hintText: 'Search stations…',
+                        hintStyle: const TextStyle(color: _muted, fontSize: 13),
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          size: 19,
+                          color: _muted,
+                        ),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHigh,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        border: OutlineInputBorder(
+                          borderSide: BorderSide.none,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                _limitPicker(),
-              ],
-            ),
+                  const SizedBox(width: 10),
+                  _limitPicker(),
+                ],
+              ),
+            ],
             if (_section != 'Favorites') ...[
               const SizedBox(height: 12),
               Wrap(
@@ -1700,33 +1631,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ),
             ],
             const SizedBox(height: 15),
-            Row(
-              children: [
-                const Expanded(child: _SmallLabel('STATION')),
-                SizedBox(
-                  width: 68,
-                  child: Text(
-                    'COUNTRY',
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 9,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 104,
-                  child: Text(
-                    'FORMAT',
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 9,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
@@ -1829,7 +1733,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       itemCount: _stations.length,
       separatorBuilder: (_, _) =>
           Divider(height: 1, color: _dividerColor(context)),
@@ -1843,7 +1747,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
     return InkWell(
       onTap: () => _selectStation(station),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 11),
         color: active
             ? Theme.of(context).colorScheme.secondaryContainer
             : Colors.transparent,
