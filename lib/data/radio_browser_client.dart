@@ -46,6 +46,9 @@ class RadioBrowserClient {
     String? country,
     String? genre,
     String? language,
+    String? codec,
+    int? bitrateMin,
+    int? bitrateMax,
   }) async {
     final params = <String, String>{
       'limit': '$limit',
@@ -65,6 +68,9 @@ class RadioBrowserClient {
       params['language'] = language;
       params['languageExact'] = 'true';
     }
+    if (codec != null && codec.isNotEmpty) params['codec'] = codec;
+    if (bitrateMin != null) params['bitrateMin'] = '$bitrateMin';
+    if (bitrateMax != null) params['bitrateMax'] = '$bitrateMax';
     final data = await _get('/json/stations/search', params);
     if (data is! List) {
       throw const FormatException('Invalid catalog response.');
@@ -85,7 +91,11 @@ class RadioBrowserClient {
     String kind, {
     int minimumGenreStationCount = 1,
   }) async {
-    const endpoints = {'Languages': '/json/languages', 'Genres': '/json/tags'};
+    const endpoints = {
+      'Languages': '/json/languages',
+      'Genres': '/json/tags',
+      'Codecs': '/json/codecs',
+    };
     final path = endpoints[kind];
     if (path == null) return const [];
     final pageSize = kind == 'Genres' ? 500 : 100000;

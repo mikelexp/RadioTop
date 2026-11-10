@@ -14,6 +14,13 @@ import '../models/radio_taxonomy_option.dart';
 const _lime = Color(0xFFB7F36B);
 const _muted = Color(0xFF858B86);
 const _line = Color(0xFF292E2B);
+const _bitrateRanges = <String, ({int? min, int? max})>{
+  'Under 64 kbps': (min: null, max: 63),
+  '64–127 kbps': (min: 64, max: 127),
+  '128–191 kbps': (min: 128, max: 191),
+  '192–319 kbps': (min: 192, max: 319),
+  '320 kbps and up': (min: 320, max: null),
+};
 
 Color _accent(BuildContext context) =>
     Theme.of(context).brightness == Brightness.light
@@ -110,6 +117,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
   String? _selectedCountry;
   String? _selectedGenre;
   String? _selectedLanguage;
+  String? _selectedCodec;
+  String? _selectedBitrateRange;
   bool _retryEnabled = true;
   int _retryIntervalSeconds = 5;
   int _bufferSeconds = 5;
@@ -429,6 +438,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
       _loading = true;
       _error = null;
     });
+    final bitrateRange = _selectedBitrateRange == null
+        ? null
+        : _bitrateRanges[_selectedBitrateRange!];
     try {
       final stations = await widget.client.search(
         query: _searchController.text,
@@ -436,6 +448,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
         country: _selectedCountry,
         genre: _selectedGenre,
         language: _selectedLanguage,
+        codec: _selectedCodec,
+        bitrateMin: bitrateRange?.min,
+        bitrateMax: bitrateRange?.max,
       );
       if (!mounted) return;
       setState(() {
@@ -865,11 +880,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
         if (!mounted) return;
         setState(() => _countries = values);
       } else if (type != 'Country' &&
-          _taxonomyOptionsByCategory[type == 'Genre'
-                  ? 'Genres'
-                  : 'Languages'] ==
-              null) {
-        final category = type == 'Genre' ? 'Genres' : 'Languages';
+          _taxonomyOptionsByCategory[_filterCategory(type)] == null) {
+        final category = _filterCategory(type);
         final values = await widget.client.taxonomy(
           category,
           minimumGenreStationCount: _minimumGenreStationCount,
@@ -890,7 +902,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
     final current = switch (type) {
       'Country' => _selectedCountry,
       'Genre' => _selectedGenre,
-      _ => _selectedLanguage,
+      'Language' => _selectedLanguage,
+      _ => _selectedCodec,
     };
     final result = await showDialog<String?>(
       context: context,
@@ -901,9 +914,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ? _countries
                     .where((value) => value.name.toLowerCase().contains(query))
                     .toList()
-              : (_taxonomyOptionsByCategory[type == 'Genre'
-                            ? 'Genres'
-                            : 'Languages'] ??
+              : (_taxonomyOptionsByCategory[_filterCategory(type)] ??
                         const <RadioTaxonomyOption>[])
                     .where((value) => value.name.toLowerCase().contains(query))
                     .toList();
@@ -945,11 +956,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                             dense: true,
                             title: Text(
                               _taxonomyDisplayName(
-                                type == 'Country'
-                                    ? ''
-                                    : type == 'Genre'
-                                    ? 'Genres'
-                                    : 'Languages',
+                                type == 'Country' ? '' : _filterCategory(type),
                                 name,
                               ),
                             ),
@@ -985,10 +992,60 @@ class _RadioHomePageState extends State<RadioHomePage> {
           _selectedCountry = value;
         case 'Genre':
           _selectedGenre = value;
-        default:
+        case 'Language':
           _selectedLanguage = value;
+        default:
+          _selectedCodec = value;
       }
     });
+    _loadStations();
+  }
+
+  String _filterCategory(String type) => switch (type) {
+    'Genre' => 'Genres',
+    'Language' => 'Languages',
+    _ => 'Codecs',
+  };
+
+  Future<void> _chooseBitrateFilter() async {
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Filter by bitrate'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text('All bitrates'),
+                trailing: _selectedBitrateRange == null
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () => Navigator.pop(dialogContext, ''),
+              ),
+              ..._bitrateRanges.keys.map(
+                (range) => ListTile(
+                  title: Text(range),
+                  trailing: _selectedBitrateRange == range
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () => Navigator.pop(dialogContext, range),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _selectedBitrateRange = result.isEmpty ? null : result);
     _loadStations();
   }
 
@@ -1622,6 +1679,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   _filterButton('Country', _selectedCountry),
                   _filterButton('Genre', _selectedGenre),
                   _filterButton('Language', _selectedLanguage),
+                  _filterButton('Codec', _selectedCodec),
+                  _filterButton('Bitrate', _selectedBitrateRange),
                 ],
               ),
             ],
@@ -1662,7 +1721,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
   );
 
   Widget _filterButton(String label, String? value) => OutlinedButton.icon(
-    onPressed: () => _chooseExploreFilter(label),
+    onPressed: () => label == 'Bitrate'
+        ? _chooseBitrateFilter()
+        : _chooseExploreFilter(label),
     icon: Icon(Icons.keyboard_arrow_down, size: 16, color: _accent(context)),
     label: Text(
       value == null
