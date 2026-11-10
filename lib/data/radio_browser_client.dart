@@ -43,8 +43,9 @@ class RadioBrowserClient {
   Future<List<Station>> search({
     String query = '',
     int limit = 100,
-    String? filterType,
-    String? filterValue,
+    String? country,
+    String? genre,
+    String? language,
   }) async {
     final params = <String, String>{
       'limit': '$limit',
@@ -52,17 +53,17 @@ class RadioBrowserClient {
       'reverse': 'true',
     };
     if (query.trim().isNotEmpty) params['name'] = query.trim();
-    if (filterType != null && filterValue != null && filterValue.isNotEmpty) {
-      final key = switch (filterType) {
-        'Countries' => 'country',
-        'Languages' => 'language',
-        'Genres' => 'tag',
-        _ => '',
-      };
-      if (key.isNotEmpty) params[key] = filterValue;
-      if (filterType == 'Countries') params['countryExact'] = 'true';
-      if (filterType == 'Languages') params['languageExact'] = 'true';
-      if (filterType == 'Genres') params['tagExact'] = 'true';
+    if (country != null && country.isNotEmpty) {
+      params['country'] = country;
+      params['countryExact'] = 'true';
+    }
+    if (genre != null && genre.isNotEmpty) {
+      params['tag'] = genre;
+      params['tagExact'] = 'true';
+    }
+    if (language != null && language.isNotEmpty) {
+      params['language'] = language;
+      params['languageExact'] = 'true';
     }
     final data = await _get('/json/stations/search', params);
     if (data is! List) {
@@ -80,23 +81,40 @@ class RadioBrowserClient {
     return stations;
   }
 
-  Future<List<RadioTaxonomyOption>> taxonomy(String kind) async {
+  Future<List<RadioTaxonomyOption>> taxonomy(
+    String kind, {
+    int minimumGenreStationCount = 1,
+  }) async {
     const endpoints = {'Languages': '/json/languages', 'Genres': '/json/tags'};
     final path = endpoints[kind];
     if (path == null) return const [];
-    final data = await _get(path, {
-      'order': 'stationcount',
-      'reverse': 'true',
-      'limit': '100000',
-    });
-    if (data is! List) {
-      throw const FormatException('Invalid taxonomy response.');
+    final pageSize = kind == 'Genres' ? 500 : 100000;
+    final options = <RadioTaxonomyOption>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final data = await _get(path, {
+        'order': 'stationcount',
+        'reverse': 'true',
+        'limit': '$pageSize',
+        'offset': '$offset',
+      });
+      if (data is! List) {
+        throw const FormatException('Invalid taxonomy response.');
+      }
+      if (data.isEmpty) break;
+      var belowMinimum = false;
+      for (final item in data.whereType<Map<String, dynamic>>()) {
+        final option = RadioTaxonomyOption.fromJson(item);
+        if (option.name.isEmpty) continue;
+        if (kind == 'Genres' &&
+            option.stationCount < minimumGenreStationCount) {
+          belowMinimum = true;
+          continue;
+        }
+        options.add(option);
+      }
+      if (kind != 'Genres' || belowMinimum || data.length < pageSize) break;
     }
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(RadioTaxonomyOption.fromJson)
-        .where((option) => option.name.isNotEmpty)
-        .toList();
+    return options;
   }
 
   Future<dynamic> _get(String path, Map<String, String> query) async {

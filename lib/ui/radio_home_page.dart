@@ -103,8 +103,13 @@ class _RadioHomePageState extends State<RadioHomePage> {
   bool _countriesLoading = false;
   String? _countryError;
   bool _taxonomyLoading = false;
+  int _taxonomyRequestGeneration = 0;
   String? _taxonomyError;
   int _limit = 100;
+  int _minimumGenreStationCount = 10;
+  String? _selectedCountry;
+  String? _selectedGenre;
+  String? _selectedLanguage;
   bool _retryEnabled = true;
   int _retryIntervalSeconds = 5;
   int _bufferSeconds = 5;
@@ -356,6 +361,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
         _retryEnabled = settings.retryEnabled;
         _retryIntervalSeconds = settings.retryIntervalSeconds;
         _bufferSeconds = settings.bufferSeconds;
+        _minimumGenreStationCount = settings.minimumGenreStationCount;
         _themeMode = settings.themeMode;
         _favoritesWarning = settings.favoritesWarning;
         _settingsLoaded = true;
@@ -427,8 +433,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
       final stations = await widget.client.search(
         query: _searchController.text,
         limit: _limit,
-        filterType: _activeTaxonomy,
-        filterValue: _activeValue,
+        country: _selectedCountry,
+        genre: _selectedGenre,
+        language: _selectedLanguage,
       );
       if (!mounted) return;
       setState(() {
@@ -451,19 +458,26 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Future<void> _openTaxonomyBrowser(String category) async {
     _navigateTo(_MiddleRoute.taxonomy(category));
+    final requestGeneration = ++_taxonomyRequestGeneration;
     setState(() => _taxonomyError = null);
     _taxonomySearchController.clear();
-    if (_taxonomyOptionsByCategory[category]?.isNotEmpty == true) return;
+    if (_taxonomyOptionsByCategory[category]?.isNotEmpty == true) {
+      setState(() => _taxonomyLoading = false);
+      return;
+    }
     setState(() => _taxonomyLoading = true);
     try {
-      final options = await widget.client.taxonomy(category);
-      if (!mounted) return;
+      final options = await widget.client.taxonomy(
+        category,
+        minimumGenreStationCount: _minimumGenreStationCount,
+      );
+      if (!mounted || requestGeneration != _taxonomyRequestGeneration) return;
       setState(() {
         _taxonomyOptionsByCategory[category] = options;
         _taxonomyLoading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _taxonomyRequestGeneration) return;
       setState(() {
         _taxonomyError = 'Could not load the list.';
         _taxonomyLoading = false;
@@ -602,11 +616,26 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _loadStations();
   }
 
+  Future<void> _setMinimumGenreStationCount(int? value) async {
+    if (value == null || value == _minimumGenreStationCount) return;
+    setState(() {
+      _minimumGenreStationCount = value;
+      _taxonomyOptionsByCategory.remove('Genres');
+    });
+    try {
+      await _saveSettings();
+    } on FileSystemException {
+      // Keep the selected threshold for this session.
+    }
+    if (_browseTaxonomy == 'Genres') _openTaxonomyBrowser('Genres');
+  }
+
   Future<void> _saveSettings() => widget.store.saveSettings(
     resultLimit: _limit,
     retryEnabled: _retryEnabled,
     retryIntervalSeconds: _retryIntervalSeconds,
     bufferSeconds: _bufferSeconds,
+    minimumGenreStationCount: _minimumGenreStationCount,
     themeMode: _themeMode,
   );
 
@@ -756,9 +785,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ),
               const SizedBox(height: 30),
               _navItem(Icons.explore_outlined, 'Explore'),
-              _navItem(Icons.language, 'Countries'),
-              _navItem(Icons.music_note, 'Genres'),
-              _navItem(Icons.translate, 'Languages'),
               _navItem(Icons.favorite_border, 'Favorites'),
               _navItem(Icons.settings_outlined, 'Settings'),
             ],
@@ -770,15 +796,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _navItem(IconData icon, String label) {
     final active = switch (label) {
-      'Countries' => _showCountryBrowser,
-      'Genres' => _browseTaxonomy == 'Genres',
-      'Languages' => _browseTaxonomy == 'Languages',
       'Favorites' => _section == 'Favorites',
       'Settings' => _section == 'Settings',
-      _ =>
-        _section == 'Explore' &&
-            !_showCountryBrowser &&
-            _browseTaxonomy == null,
+      _ => _section == 'Explore',
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: 5),
@@ -818,13 +838,6 @@ class _RadioHomePageState extends State<RadioHomePage> {
     _middleHistory.clear();
     _browseListGeneration++;
     switch (label) {
-      case 'Countries':
-        _openCountryBrowser();
-        break;
-      case 'Genres':
-      case 'Languages':
-        _openTaxonomyBrowser(label);
-        break;
       case 'Favorites':
         setState(
           () => _applyRoute(const _MiddleRoute.stations(section: 'Favorites')),
@@ -842,10 +855,141 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _middlePane() {
     if (_section == 'Settings') return _settingsPane();
-    if (_showCountryBrowser) return _countryBrowser();
-    final category = _browseTaxonomy;
-    if (category != null) return _taxonomyBrowser(category);
     return _results();
+  }
+
+  Future<void> _chooseExploreFilter(String type) async {
+    try {
+      if (type == 'Country' && _countries.isEmpty) {
+        final values = await widget.client.countries();
+        if (!mounted) return;
+        setState(() => _countries = values);
+      } else if (type != 'Country' &&
+          _taxonomyOptionsByCategory[type == 'Genre'
+                  ? 'Genres'
+                  : 'Languages'] ==
+              null) {
+        final category = type == 'Genre' ? 'Genres' : 'Languages';
+        final values = await widget.client.taxonomy(
+          category,
+          minimumGenreStationCount: _minimumGenreStationCount,
+        );
+        if (!mounted) return;
+        setState(() => _taxonomyOptionsByCategory[category] = values);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load $type filters.')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    final controller = TextEditingController();
+    final current = switch (type) {
+      'Country' => _selectedCountry,
+      'Genre' => _selectedGenre,
+      _ => _selectedLanguage,
+    };
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, refreshDialog) {
+          final query = controller.text.trim().toLowerCase();
+          final values = type == 'Country'
+              ? _countries
+                    .where((value) => value.name.toLowerCase().contains(query))
+                    .toList()
+              : (_taxonomyOptionsByCategory[type == 'Genre'
+                            ? 'Genres'
+                            : 'Languages'] ??
+                        const <RadioTaxonomyOption>[])
+                    .where((value) => value.name.toLowerCase().contains(query))
+                    .toList();
+          return AlertDialog(
+            title: Text('Filter by $type'),
+            content: SizedBox(
+              width: 420,
+              height: 440,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    onChanged: (_) => refreshDialog(() {}),
+                    decoration: InputDecoration(
+                      hintText: 'Search ${type.toLowerCase()}…',
+                      prefixIcon: const Icon(Icons.search),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        ListTile(
+                          title: const Text('All'),
+                          trailing: current == null
+                              ? const Icon(Icons.check)
+                              : null,
+                          onTap: () => Navigator.pop(dialogContext, ''),
+                        ),
+                        ...values.map((value) {
+                          final name = value is RadioCountry
+                              ? value.name
+                              : (value as RadioTaxonomyOption).name;
+                          final count = value is RadioCountry
+                              ? value.stationCount
+                              : (value as RadioTaxonomyOption).stationCount;
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              _taxonomyDisplayName(
+                                type == 'Country'
+                                    ? ''
+                                    : type == 'Genre'
+                                    ? 'Genres'
+                                    : 'Languages',
+                                name,
+                              ),
+                            ),
+                            subtitle: Text('$count stations'),
+                            trailing: current == name
+                                ? const Icon(Icons.check)
+                                : null,
+                            onTap: () => Navigator.pop(dialogContext, name),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+    if (result == null || !mounted) return;
+    setState(() {
+      final value = result.isEmpty ? null : result;
+      switch (type) {
+        case 'Country':
+          _selectedCountry = value;
+        case 'Genre':
+          _selectedGenre = value;
+        default:
+          _selectedLanguage = value;
+      }
+    });
+    _loadStations();
   }
 
   Widget _settingsPane() => Column(
@@ -888,7 +1032,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ),
               child: DropdownButtonFormField<String>(
                 value: _themeMode,
-                dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+                dropdownColor: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHigh,
                 decoration: const InputDecoration(
                   labelText: 'Theme',
                   border: InputBorder.none,
@@ -899,6 +1045,36 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   DropdownMenuItem(value: 'dark', child: Text('Dark')),
                 ],
                 onChanged: _setThemeMode,
+              ),
+            ),
+            const SizedBox(height: 30),
+            const _SmallLabel('CATALOG'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: DropdownButtonFormField<int>(
+                value: _minimumGenreStationCount,
+                dropdownColor: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHigh,
+                decoration: const InputDecoration(
+                  labelText: 'Only show genres with at least X stations',
+                  border: InputBorder.none,
+                ),
+                items: const [1, 2, 5, 10, 25, 50, 100]
+                    .map(
+                      (count) => DropdownMenuItem(
+                        value: count,
+                        child: Text('$count stations'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _setMinimumGenreStationCount,
               ),
             ),
             const SizedBox(height: 30),
@@ -964,7 +1140,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                       ),
                       DropdownButton<int>(
                         value: _retryIntervalSeconds,
-                        dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+                        dropdownColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHigh,
                         underline: const SizedBox.shrink(),
                         items: const [1, 3, 5, 10, 15, 30]
                             .map(
@@ -1073,10 +1251,11 @@ class _RadioHomePageState extends State<RadioHomePage> {
 
   Widget _countryBrowser() {
     final query = _countrySearchController.text.trim().toLowerCase();
-    final countries = _countries
-        .where((country) => country.name.toLowerCase().contains(query))
-        .toList()
-      ..sort((a, b) => _compareNames(a.name, b.name));
+    final countries =
+        _countries
+            .where((country) => country.name.toLowerCase().contains(query))
+            .toList()
+          ..sort((a, b) => _compareNames(a.name, b.name));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1195,7 +1374,10 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _taxonomyList(String category, List<RadioTaxonomyOption> options) {
     if (_taxonomyLoading) {
       return Center(
-        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
+        child: CircularProgressIndicator(
+          color: _accent(context),
+          strokeWidth: 2,
+        ),
       );
     }
     if (_taxonomyError != null) {
@@ -1228,7 +1410,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
       ),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: options.length,
-      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
+      separatorBuilder: (_, _) =>
+          Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) {
         final option = options[index];
         return InkWell(
@@ -1265,7 +1448,10 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _countryList(List<RadioCountry> countries) {
     if (_countriesLoading) {
       return Center(
-        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
+        child: CircularProgressIndicator(
+          color: _accent(context),
+          strokeWidth: 2,
+        ),
       );
     }
     if (_countryError != null) {
@@ -1296,7 +1482,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
       key: PageStorageKey<String>('countries-list-$_browseListGeneration'),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
       itemCount: countries.length,
-      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
+      separatorBuilder: (_, _) =>
+          Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) {
         final country = countries[index];
         return InkWell(
@@ -1411,7 +1598,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                         color: _muted,
                       ),
                       filled: true,
-                      fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+                      fillColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHigh,
                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
                       border: OutlineInputBorder(
                         borderSide: BorderSide.none,
@@ -1424,17 +1613,18 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 _limitPicker(),
               ],
             ),
-            if (_activeValue != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: ActionChip(
-                  label: Text(
-                    '${_activeTaxonomy!}: $_activeValue  ×',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  onPressed: _clearActiveFilter,
-                ),
+            if (_section != 'Favorites') ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  _filterButton('Country', _selectedCountry),
+                  _filterButton('Genre', _selectedGenre),
+                  _filterButton('Language', _selectedLanguage),
+                ],
               ),
+            ],
             const SizedBox(height: 15),
             Row(
               children: [
@@ -1471,6 +1661,30 @@ class _RadioHomePageState extends State<RadioHomePage> {
     ],
   );
 
+  Widget _filterButton(String label, String? value) => OutlinedButton.icon(
+    onPressed: () => _chooseExploreFilter(label),
+    icon: Icon(Icons.keyboard_arrow_down, size: 16, color: _accent(context)),
+    label: Text(
+      value == null
+          ? label
+          : _taxonomyDisplayName(
+              label == 'Genre'
+                  ? 'Genres'
+                  : label == 'Language'
+                  ? 'Languages'
+                  : '',
+              value,
+            ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+    style: OutlinedButton.styleFrom(
+      foregroundColor: value == null ? _muted : _accent(context),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      visualDensity: VisualDensity.compact,
+    ),
+  );
+
   Widget _limitPicker() => PopupMenuButton<int>(
     initialValue: _limit,
     onSelected: _setResultLimit,
@@ -1500,7 +1714,10 @@ class _RadioHomePageState extends State<RadioHomePage> {
   Widget _bodyResults() {
     if (_loading) {
       return Center(
-        child: CircularProgressIndicator(color: _accent(context), strokeWidth: 2),
+        child: CircularProgressIndicator(
+          color: _accent(context),
+          strokeWidth: 2,
+        ),
       );
     }
     if (_error != null) {
@@ -1538,7 +1755,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 5),
       itemCount: _stations.length,
-      separatorBuilder: (_, _) => Divider(height: 1, color: _dividerColor(context)),
+      separatorBuilder: (_, _) =>
+          Divider(height: 1, color: _dividerColor(context)),
       itemBuilder: (context, index) => _stationRow(_stations[index]),
     );
   }
@@ -1761,8 +1979,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   : Icons.play_arrow_rounded,
               onPressed: _selected == null ? null : _togglePlayback,
               active: _isPlaying && !_isBuffering,
-              loading:
-                  _isBuffering || (_playbackRequested && !_isPlaying),
+              loading: _isBuffering || (_playbackRequested && !_isPlaying),
             ),
             const SizedBox(width: 8),
             _transportButton(

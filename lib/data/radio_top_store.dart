@@ -10,6 +10,7 @@ class RadioTopSettings {
     this.retryEnabled = true,
     this.retryIntervalSeconds = 5,
     this.bufferSeconds = 5,
+    this.minimumGenreStationCount = 10,
     this.themeMode = 'system',
     this.favorites = const [],
     this.favoritesWarning,
@@ -19,6 +20,7 @@ class RadioTopSettings {
   final bool retryEnabled;
   final int retryIntervalSeconds;
   final int bufferSeconds;
+  final int minimumGenreStationCount;
   final String themeMode;
   final List<Station> favorites;
   final String? favoritesWarning;
@@ -41,6 +43,7 @@ class RadioTopStore {
     var retryEnabled = true;
     var retryIntervalSeconds = 5;
     var bufferSeconds = 5;
+    var minimumGenreStationCount = 10;
     var themeMode = 'system';
     var favorites = <Station>[];
     String? favoritesWarning;
@@ -71,6 +74,13 @@ class RadioTopStore {
           parsedBufferSeconds <= 30) {
         bufferSeconds = parsedBufferSeconds;
       }
+      final parsedGenreMinimum = int.tryParse(
+        settings?['minimumGenreStationCount']?.toString() ?? '',
+      );
+      if (parsedGenreMinimum != null &&
+          const {1, 2, 5, 10, 25, 50, 100}.contains(parsedGenreMinimum)) {
+        minimumGenreStationCount = parsedGenreMinimum;
+      }
       final storedThemeMode = settings?['themeMode'];
       if (storedThemeMode is String &&
           const {'system', 'light', 'dark'}.contains(storedThemeMode)) {
@@ -88,11 +98,12 @@ class RadioTopStore {
       }
       final entries = switch (decoded) {
         List list => list,
-        Map map => map['favorites'] is List
-            ? map['favorites'] as List
-            : map['stations'] is List
-            ? map['stations'] as List
-            : map.values.toList(),
+        Map map =>
+          map['favorites'] is List
+              ? map['favorites'] as List
+              : map['stations'] is List
+              ? map['stations'] as List
+              : map.values.toList(),
         _ => const <dynamic>[],
       };
       var skipped = 0;
@@ -132,6 +143,7 @@ class RadioTopStore {
       retryEnabled: retryEnabled,
       retryIntervalSeconds: retryIntervalSeconds,
       bufferSeconds: bufferSeconds,
+      minimumGenreStationCount: minimumGenreStationCount,
       themeMode: themeMode,
       favorites: favorites,
       favoritesWarning: favoritesWarning,
@@ -143,6 +155,7 @@ class RadioTopStore {
     required bool retryEnabled,
     required int retryIntervalSeconds,
     required int bufferSeconds,
+    required int minimumGenreStationCount,
     required String themeMode,
   }) => _enqueue(() async {
     await _directory.create(recursive: true);
@@ -152,6 +165,7 @@ class RadioTopStore {
         'retryEnabled': retryEnabled,
         'retryIntervalSeconds': retryIntervalSeconds,
         'bufferSeconds': bufferSeconds,
+        'minimumGenreStationCount': minimumGenreStationCount,
         'themeMode': themeMode,
       }),
       flush: true,
@@ -189,7 +203,10 @@ class RadioTopStore {
     ...json,
     'stationuuid': json['stationuuid'] ?? json['uuid'],
     'url_resolved':
-        json['url_resolved'] ?? json['streamUrl'] ?? json['stream_url'] ?? json['url'],
+        json['url_resolved'] ??
+        json['streamUrl'] ??
+        json['stream_url'] ??
+        json['url'],
     'countrycode': json['countrycode'] ?? json['countryCode'],
   };
 }
