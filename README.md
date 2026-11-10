@@ -8,8 +8,9 @@ countries, genres, and languages at runtime. The app interface is in English.
 
 - Three-column desktop layout with navigation and category selectors, a central
   searchable country/genre/language picker and station list, and a player panel.
-- Country entries show flags and the number of stations in the Radio-Browser
-  catalog. Selecting a country, genre, or language loads matching stations.
+- Country pickers show a flag beside each country name and its station count.
+  Countries without a matched flag keep the same reserved flag space so names
+  remain aligned. Selecting a country, genre, or language loads matching stations.
 - Station search with a configurable result count (100 by default).
 - Station artwork and catalog metadata, with explicit “Not reported” values for
   technical details not provided by the catalog.

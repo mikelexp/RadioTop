@@ -954,6 +954,21 @@ class _RadioHomePageState extends State<RadioHomePage> {
                               : (value as RadioTaxonomyOption).stationCount;
                           return ListTile(
                             dense: true,
+                            leading: value is RadioCountry
+                                ? SizedBox(
+                                    width: 30,
+                                    child: Center(
+                                      child: value.flag == null
+                                          ? null
+                                          : Text(
+                                              value.flag!,
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                              ),
+                                            ),
+                                    ),
+                                  )
+                                : null,
                             title: Text(
                               _taxonomyDisplayName(
                                 type == 'Country' ? '' : _filterCategory(type),
