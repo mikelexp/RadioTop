@@ -799,7 +799,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 ],
               ),
               const SizedBox(height: 30),
-              _navItem(Icons.explore_outlined, 'Explore'),
+              _navItem(Icons.explore_outlined, 'Radio Stations'),
               _navItem(Icons.favorite_border, 'Favorites'),
               _navItem(Icons.settings_outlined, 'Settings'),
             ],
@@ -1629,7 +1629,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
                     _section == 'Favorites'
                         ? 'Your favorites'
                         : _activeValue == null
-                        ? 'Explore stations'
+                        ? 'Radio Stations'
                         : _taxonomyDisplayName(
                             _activeTaxonomy ?? '',
                             _activeValue!,
@@ -1645,15 +1645,15 @@ class _RadioHomePageState extends State<RadioHomePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              _section == 'Favorites'
-                  ? 'Your saved stations · ${_stations.length}'
-                  : _activeTaxonomy != null
-                  ? 'Stations · ${_taxonomyDisplayName(_activeTaxonomy!, _activeValue!)}'
-                  : 'Find your next station',
-              style: const TextStyle(color: _muted, fontSize: 12),
-            ),
+            if (_section == 'Favorites' || _activeTaxonomy != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _section == 'Favorites'
+                    ? 'Your saved stations · ${_stations.length}'
+                    : 'Stations · ${_taxonomyDisplayName(_activeTaxonomy!, _activeValue!)}',
+                style: const TextStyle(color: _muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 20),
             Row(
               children: [
