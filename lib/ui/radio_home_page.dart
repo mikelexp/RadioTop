@@ -797,107 +797,29 @@ class _RadioHomePageState extends State<RadioHomePage> {
       return;
     }
     if (!mounted) return;
-    final controller = TextEditingController();
     final current = switch (type) {
       'Country' => _selectedCountry,
       'Genre' => _selectedGenre,
       'Language' => _selectedLanguage,
       _ => _selectedCodec,
     };
+    final options = type == 'Country'
+        ? _countries.cast<Object>()
+        : (_taxonomyOptionsByCategory[_filterCategory(type)] ??
+                  const <RadioTaxonomyOption>[])
+              .cast<Object>();
     final result = await showDialog<String?>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, refreshDialog) {
-          final query = controller.text.trim().toLowerCase();
-          final values = type == 'Country'
-              ? _countries
-                    .where((value) => value.name.toLowerCase().contains(query))
-                    .toList()
-              : (_taxonomyOptionsByCategory[_filterCategory(type)] ??
-                        const <RadioTaxonomyOption>[])
-                    .where((value) => value.name.toLowerCase().contains(query))
-                    .toList();
-          return AlertDialog(
-            title: Text('Filter by $type'),
-            content: SizedBox(
-              width: 420,
-              height: 440,
-              child: Column(
-                children: [
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    onChanged: (_) => refreshDialog(() {}),
-                    decoration: InputDecoration(
-                      hintText: 'Search ${type.toLowerCase()}…',
-                      prefixIcon: const Icon(Icons.search),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        ListTile(
-                          title: const Text('All'),
-                          trailing: current == null
-                              ? const Icon(Icons.check)
-                              : null,
-                          onTap: () => Navigator.pop(dialogContext, ''),
-                        ),
-                        ...values.map((value) {
-                          final name = value is RadioCountry
-                              ? value.name
-                              : (value as RadioTaxonomyOption).name;
-                          final count = value is RadioCountry
-                              ? value.stationCount
-                              : (value as RadioTaxonomyOption).stationCount;
-                          return ListTile(
-                            dense: true,
-                            leading: value is RadioCountry
-                                ? SizedBox(
-                                    width: 30,
-                                    child: Center(
-                                      child: value.flag == null
-                                          ? null
-                                          : Text(
-                                              value.flag!,
-                                              style: const TextStyle(
-                                                fontSize: 22,
-                                              ),
-                                            ),
-                                    ),
-                                  )
-                                : null,
-                            title: Text(
-                              _taxonomyDisplayName(
-                                type == 'Country' ? '' : _filterCategory(type),
-                                name,
-                              ),
-                            ),
-                            subtitle: Text('$count stations'),
-                            trailing: current == name
-                                ? const Icon(Icons.check)
-                                : null,
-                            onTap: () => Navigator.pop(dialogContext, name),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-            ],
-          );
-        },
+      builder: (_) => _FilterDialog(
+        type: type,
+        current: current,
+        options: options,
+        displayName: (name) => _taxonomyDisplayName(
+          type == 'Country' ? '' : _filterCategory(type),
+          name,
+        ),
       ),
     );
-    controller.dispose();
     if (result == null || !mounted) return;
     setState(() {
       final value = result.isEmpty ? null : result;
@@ -1603,7 +1525,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                         fillColor: Theme.of(context)
                             .colorScheme
                             .surfaceContainerHigh,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
                         border: OutlineInputBorder(
                           borderSide: BorderSide.none,
                           borderRadius: BorderRadius.circular(10),
@@ -2140,6 +2064,115 @@ class _RadioHomePageState extends State<RadioHomePage> {
       ],
     ),
   );
+}
+
+class _FilterDialog extends StatefulWidget {
+  const _FilterDialog({
+    required this.type,
+    required this.current,
+    required this.options,
+    required this.displayName,
+  });
+
+  final String type;
+  final String? current;
+  final List<Object> options;
+  final String Function(String) displayName;
+
+  @override
+  State<_FilterDialog> createState() => _FilterDialogState();
+}
+
+class _FilterDialogState extends State<_FilterDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _controller.text.trim().toLowerCase();
+    final values = widget.options.where((value) {
+      final name = value is RadioCountry
+          ? value.name
+          : (value as RadioTaxonomyOption).name;
+      return name.toLowerCase().contains(query);
+    });
+
+    return AlertDialog(
+      title: Text('Filter by ${widget.type}'),
+      content: SizedBox(
+        width: 420,
+        height: 440,
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Search ${widget.type.toLowerCase()}…',
+                prefixIcon: const Icon(Icons.search),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
+                    title: const Text('All'),
+                    trailing: widget.current == null
+                        ? const Icon(Icons.check)
+                        : null,
+                    onTap: () => Navigator.pop(context, ''),
+                  ),
+                  ...values.map((value) {
+                    final name = value is RadioCountry
+                        ? value.name
+                        : (value as RadioTaxonomyOption).name;
+                    final count = value is RadioCountry
+                        ? value.stationCount
+                        : (value as RadioTaxonomyOption).stationCount;
+                    return ListTile(
+                      dense: true,
+                      leading: value is RadioCountry
+                          ? SizedBox(
+                              width: 30,
+                              child: Center(
+                                child: value.flag == null
+                                    ? null
+                                    : Text(
+                                        value.flag!,
+                                        style: const TextStyle(fontSize: 22),
+                                      ),
+                              ),
+                            )
+                          : null,
+                      title: Text(widget.displayName(name)),
+                      subtitle: Text('$count stations'),
+                      trailing: widget.current == name
+                          ? const Icon(Icons.check)
+                          : null,
+                      onTap: () => Navigator.pop(context, name),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
 }
 
 class _SmallLabel extends StatelessWidget {
