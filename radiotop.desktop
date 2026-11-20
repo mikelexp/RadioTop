@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=RadioTop
+Comment=Browse and play internet radio stations
+Exec=radiotop
+Icon=radiotop
+StartupWMClass=com.mikelexp.radiotop
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;

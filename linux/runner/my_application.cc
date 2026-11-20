@@ -23,6 +23,7 @@ static void my_application_activate(GApplication* application) {
 
   // Leave title bar and window controls to the desktop environment/window manager.
   gtk_window_set_title(window, "RadioTop");
+  gtk_window_set_icon_name(window, "radiotop");
 
   gtk_window_set_default_size(window, 1280, 800);
 

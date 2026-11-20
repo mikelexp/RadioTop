@@ -1,0 +1,65 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  github-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.8"
+          channel: stable
+          cache: true
+
+      - uses: extractions/setup-just@v2
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Build and publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          FLUTTER: flutter
+        run: just publish-github
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aur-package-metadata
+          path: .release/PKGBUILD
+          if-no-files-found: error
+
+  aur:
+    needs: github-release
+    if: ${{ vars.AUR_PUBLISH_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install AUR publishing tools
+        run: pacman -Syu --noconfirm just git openssh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: aur-package-metadata
+          path: .release
+
+      - name: Publish to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          su --preserve-environment builder -c "cd '$GITHUB_WORKSPACE' && just aur-publish"
