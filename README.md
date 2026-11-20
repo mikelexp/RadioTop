@@ -19,6 +19,16 @@ and stations dynamically. The interface is in English.
 - Radio-Browser server discovery and failover. Missing technical metadata is
   shown as unreported rather than inferred.
 
+## Screenshots
+
+### Station browser
+
+![RadioTop station browser with station results and player](screenshots/screenshot-01.png)
+
+### Searchable country filter
+
+![RadioTop searchable country filter showing country flags and station counts](screenshots/screenshot-02.png)
+
 ## Requirements
 
 - Linux x86_64.
