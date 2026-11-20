@@ -1,4 +1,5 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set script-interpreter := ["bash", "-euo", "pipefail"]
 
 version := `tr -d '[:space:]' < VERSION`
 flutter := env_var_or_default("FLUTTER", `if command -v fvm >/dev/null 2>&1 && fvm flutter --version >/dev/null 2>&1; then printf 'fvm flutter'; else printf 'flutter'; fi`)
