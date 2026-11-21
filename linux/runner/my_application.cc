@@ -15,6 +15,47 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+struct WindowState {
+  GtkWindow* window;
+  gint width;
+  gint height;
+  gboolean maximized;
+  gboolean mini;
+};
+
+static void window_method_call_cb(FlMethodChannel* channel,
+                                  FlMethodCall* method_call,
+                                  gpointer user_data) {
+  WindowState* state = static_cast<WindowState*>(user_data);
+  const gchar* method = fl_method_call_get_name(method_call);
+  FlValue* args = fl_method_call_get_args(method_call);
+  g_autoptr(FlMethodResponse) response = nullptr;
+  if (g_strcmp0(method, "setMiniPlayer") != 0) {
+    response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
+  } else if (args == nullptr || fl_value_get_type(args) != FL_VALUE_TYPE_BOOL) {
+    response = FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "invalid_argument", "Expected a boolean", nullptr));
+  } else {
+    gboolean mini = fl_value_get_bool(args);
+    if (mini != state->mini) {
+      if (mini) {
+        gtk_window_get_size(state->window, &state->width, &state->height);
+        GdkWindow* gdk_window = gtk_widget_get_window(GTK_WIDGET(state->window));
+        state->maximized = gdk_window != nullptr &&
+            (gdk_window_get_state(gdk_window) & GDK_WINDOW_STATE_MAXIMIZED);
+        if (state->maximized) gtk_window_unmaximize(state->window);
+        gtk_window_resize(state->window, 340, 500);
+      } else {
+        gtk_window_resize(state->window, state->width, state->height);
+        if (state->maximized) gtk_window_maximize(state->window);
+      }
+      state->mini = mini;
+    }
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  }
+  fl_method_call_respond(method_call, response, nullptr);
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -47,6 +88,15 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+
+  g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
+  g_autoptr(FlMethodChannel) window_channel = fl_method_channel_new(
+      fl_engine_get_binary_messenger(fl_view_get_engine(view)),
+      "radiotop/window", FL_METHOD_CODEC(codec));
+  WindowState* window_state = g_new0(WindowState, 1);
+  window_state->window = window;
+  fl_method_channel_set_method_call_handler(window_channel, window_method_call_cb,
+                                          window_state, g_free);
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }

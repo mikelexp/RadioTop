@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../data/radio_browser_client.dart';
@@ -123,6 +124,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
   int _retryIntervalSeconds = 5;
   int _bufferSeconds = 5;
   String _themeMode = 'system';
+  static const _windowChannel = MethodChannel('radiotop/window');
+  bool _isMiniPlayer = false;
+  bool _windowChanging = false;
   bool _isPlaying = false;
   bool _playbackLoading = false;
   String? _playbackError;
@@ -732,14 +736,35 @@ class _RadioHomePageState extends State<RadioHomePage> {
     }
   }
 
+  Future<void> _toggleMiniPlayer() async {
+    if (_windowChanging) return;
+    _windowChanging = true;
+    final mini = !_isMiniPlayer;
+    try {
+      await _windowChannel.invokeMethod<void>('setMiniPlayer', mini);
+      if (mounted) setState(() => _isMiniPlayer = mini);
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not change window size: ${error.message}')),
+        );
+      }
+    } finally {
+      _windowChanging = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: LayoutBuilder(
+        child: _isMiniPlayer
+            ? _player(mini: true)
+            : LayoutBuilder(
           builder: (context, constraints) {
             if (constraints.maxWidth < 900) return _compactLayout();
             return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   child: Column(
@@ -1788,7 +1813,8 @@ class _RadioHomePageState extends State<RadioHomePage> {
     ),
   );
 
-  Widget _player() => Padding(
+  Widget _player({bool mini = false}) => SingleChildScrollView(
+    child: Padding(
     padding: const EdgeInsets.fromLTRB(20, 25, 20, 18),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1807,6 +1833,12 @@ class _RadioHomePageState extends State<RadioHomePage> {
               ),
             ),
             const Spacer(),
+            IconButton(
+              tooltip: mini ? 'Restore full window' : 'Mini player',
+              onPressed: _toggleMiniPlayer,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(mini ? Icons.open_in_full : Icons.picture_in_picture_alt),
+            ),
             Container(
               width: 7,
               height: 7,
@@ -1938,6 +1970,7 @@ class _RadioHomePageState extends State<RadioHomePage> {
             ),
           ],
         ),
+        if (!mini) ...[
         const SizedBox(height: 20),
         _detail('Country', _selected?.country),
         _detail('Language', _selected?.language),
@@ -1966,8 +1999,9 @@ class _RadioHomePageState extends State<RadioHomePage> {
                   : null),
         ),
         _detail('Current track', _currentTrack),
-        const Spacer(),
+        ],
       ],
+    ),
     ),
   );
 
@@ -1989,6 +2023,11 @@ class _RadioHomePageState extends State<RadioHomePage> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12),
           ),
+        ),
+        IconButton(
+          tooltip: 'Mini player',
+          onPressed: _toggleMiniPlayer,
+          icon: const Icon(Icons.picture_in_picture_alt),
         ),
         IconButton(
           tooltip: _isPlaying ? 'Pause' : 'Play',
