@@ -29,6 +29,10 @@ and stations dynamically. The interface is in English.
 
 ![RadioTop searchable country filter showing country flags and station counts](screenshots/screenshot-02.png)
 
+### Mini player
+
+![RadioTop mini player with transport and volume controls](screenshots/screenshot-03.png)
+
 ## Requirements
 
 - Linux x86_64.
