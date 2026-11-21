@@ -111,6 +111,21 @@ It installs the Flutter bundle under `/usr/lib/radiotop`, the executable at
 `/usr/bin/radiotop`, a desktop launcher under `/usr/share/applications/`, and
 icons in the hicolor theme. The package declares GTK 3 as a runtime dependency.
 
+### Install from this checkout on Arch Linux
+
+With `base-devel` installed, use the same package definition and pacman package
+management as the AUR installation:
+
+```sh
+just install
+just uninstall
+```
+
+`just install` downloads the GitHub Release matching `VERSION`, builds the
+`radiotop-bin` package with `makepkg`, and installs it with pacman. It does not
+build uncommitted source changes. `just uninstall` removes the package but keeps
+preferences and favorites in `~/.config/radiotop/`.
+
 ### Manual installation from a GitHub Release
 
 Download the `radiotop-<version>-linux-x86_64.tar.gz` asset from the GitHub

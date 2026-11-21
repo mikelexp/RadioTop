@@ -40,6 +40,21 @@ check-flutter:
 run *ARGS: check-flutter
     {{flutter}} run -d linux {{ARGS}}
 
+# Install the versioned binary package through pacman, as with an AUR helper.
+[script]
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v makepkg >/dev/null || { echo "makepkg is required (Arch Linux base-devel)." >&2; exit 1; }
+    mkdir -p .release/local-package
+    cp PKGBUILD .release/local-package/PKGBUILD
+    cd .release/local-package
+    makepkg --syncdeps --install --force
+
+# Remove the package through pacman, retaining user configuration and favorites.
+uninstall:
+    sudo pacman -R radiotop-bin
+
 set-version VERSION:
     @[[ "{{VERSION}}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Version must be plain semver (for example 0.9.1)" >&2; exit 1; }
     @printf '%s\n' "{{VERSION}}" > VERSION
