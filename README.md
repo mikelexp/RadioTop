@@ -152,6 +152,34 @@ sudo install -Dm644 radiotop-release/LICENSE \
 After installation, launch RadioTop from the desktop application menu or run
 `radiotop`. The GTK application ID is `com.mikelexp.radiotop`.
 
+## Reproducible builds
+
+Flutter 3.47.8 is pinned in `.fvmrc` and in the release workflow. It includes
+Dart; `pubspec.lock` records the resolved Dart packages. Install FVM, then run
+`fvm install` and `just build`. The build enforces the lockfile before compiling.
+GitHub Actions also builds on pushes, pull requests, and a weekly schedule.
+
+To preserve an offline copy of the Linux x86_64 Flutter SDK and the packages in
+`pubspec.lock`, run `just backup-build-dependencies`. It downloads into the
+project's `.toolchains/` and `.pub-cache/` directories and creates an archive and
+checksum under `.build-backup/`. Copy both files to independent storage; these
+generated files are not committed to Git. To restore them in a checkout, verify
+the checksum, extract the archive in the project root, and run:
+
+```sh
+sha256sum -c .build-backup/SHA256SUMS
+# Extract .build-backup/radiotop-build-dependencies-linux-x64.tar.gz here.
+export FVM_CACHE_PATH="$PWD/.toolchains" PUB_CACHE="$PWD/.pub-cache"
+fvm flutter pub get --offline --enforce-lockfile
+fvm flutter build linux --release --no-pub
+```
+
+The backup does not include FVM, the operating system, or Linux build tools and
+libraries (such as Clang, CMake, Ninja, GTK and liblzma). Preserve a compatible
+Linux build environment separately; an offline SDK archive alone cannot guarantee
+future builds. Update dependencies and the SDK deliberately, rebuild, and refresh
+the backup after changes.
+
 ## Versioning and releases
 
 `VERSION` is the canonical release version. `just set-version` synchronizes it

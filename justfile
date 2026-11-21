@@ -62,7 +62,24 @@ set-version VERSION:
     @sed -i -E "s/^pkgver=.*/pkgver={{VERSION}}/; s/^pkgrel=.*/pkgrel=1/; s/^sha256sums=.*/sha256sums=('SKIP')/" PKGBUILD
 
 build: check-flutter
-    {{flutter}} build linux --release --build-name "{{version}}" --build-number 1
+    {{flutter}} pub get --enforce-lockfile
+    {{flutter}} build linux --release --no-pub --build-name "{{version}}" --build-number 1
+
+# Save an offline copy of the pinned Linux SDK and resolved pub packages.
+[script]
+backup-build-dependencies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export FVM_CACHE_PATH="$PWD/.toolchains"
+    export PUB_CACHE="$PWD/.pub-cache"
+    mkdir -p "$FVM_CACHE_PATH" "$PUB_CACHE" .build-backup
+    fvm install
+    fvm flutter precache --linux
+    fvm flutter pub get --enforce-lockfile
+    tar -czf .build-backup/radiotop-build-dependencies-linux-x64.tar.gz .toolchains .pub-cache
+    sha256sum .build-backup/radiotop-build-dependencies-linux-x64.tar.gz > .build-backup/SHA256SUMS
+    echo "Backup saved in .build-backup/; copy it to independent storage."
+
 
 release-archive: build
     @mkdir -p .release
