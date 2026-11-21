@@ -2,7 +2,7 @@
 
 pkgname=radiotop-bin
 pkgver=0.9.1
-pkgrel=1
+pkgrel=2
 pkgdesc="Linux desktop internet-radio browser and player"
 arch=('x86_64')
 url="https://github.com/mikelexp/RadioTop"
@@ -14,8 +14,9 @@ sha256sums=('SKIP')
 package() {
   install -d "${pkgdir}/usr/lib/radiotop"
   cp -a "${srcdir}/bundle/." "${pkgdir}/usr/lib/radiotop/"
-  install -Dm755 "${pkgdir}/usr/lib/radiotop/radiotop" \
-    "${pkgdir}/usr/bin/radiotop"
+  install -d "${pkgdir}/usr/bin"
+  printf '%s\n' '#!/bin/sh' 'exec /usr/lib/radiotop/radiotop "$@"' > "${pkgdir}/usr/bin/radiotop"
+  chmod 755 "${pkgdir}/usr/bin/radiotop"
   install -Dm644 "${srcdir}/radiotop.desktop" \
     "${pkgdir}/usr/share/applications/radiotop.desktop"
   install -Dm644 "${srcdir}/radiotop.png" \

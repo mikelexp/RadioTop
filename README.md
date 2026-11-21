@@ -138,7 +138,9 @@ tar -xzf radiotop-0.9.0-linux-x86_64.tar.gz -C radiotop-release
 
 sudo install -d /usr/lib/radiotop
 sudo cp -a radiotop-release/bundle/. /usr/lib/radiotop/
-sudo install -Dm755 /usr/lib/radiotop/radiotop /usr/bin/radiotop
+printf '%s\n' '#!/bin/sh' 'exec /usr/lib/radiotop/radiotop "$@"' | \
+  sudo tee /usr/bin/radiotop > /dev/null
+sudo chmod 755 /usr/bin/radiotop
 sudo install -Dm644 radiotop-release/radiotop.desktop \
   /usr/share/applications/radiotop.desktop
 sudo install -Dm644 radiotop-release/radiotop.png \
